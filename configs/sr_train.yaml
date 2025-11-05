@@ -1,0 +1,46 @@
+job:
+  name: s2flow_sr_training
+  type: sr_train
+  logging:
+    log_dir: ./logs/sr_training
+    wandb:
+      enabled: true
+      project: s2flow-sr
+      entity: gcer
+  out_dir: ./runs/sr_training
+  load_checkpoint: true
+  checkpoint_filename: latest_checkpoint.pt
+
+
+sr_model:
+  model_type: unet
+  sample_size: 256
+  in_channels: 8
+  out_channels: 8
+  block_out_channels: [64, 128, 256, 512]
+  down_block_types: ["DownBlock2D", "DownBlock2D", "DownBlock2D", "DownBlock2D"]
+  up_block_types: ["UpBlock2D", "UpBlock2D", "UpBlock2D", "UpBlock2D"]
+  layers_per_block: 2
+  num_norm_groups: 32
+
+
+data:
+  samples_par_path: /path/to/sentinel2/sr/samples.parquet
+  target_dir_path: /path/to/naip/images/
+  input_dir_path: /path/to/sentinel2/images/
+
+
+hyperparameters:
+  learning_rate: 1e-3
+  batch_size: 1024
+  micro_batch_size: 32
+  num_epochs: 300
+  lr_scheduler:
+    type: cosine
+    warmup_epochs: 10 # set to 0 to disable warmup
+  optimizer: adamw
+  weight_decay: 1e-2
+  use_amp: true # automatic mixed precision
+
+metrics:
+  pca_lpips_k: 2.0 # number of standard deviations to clip to for LPIPS calculation

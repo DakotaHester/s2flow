@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "s2flow"
+version = "0.1.0"
+authors = [
+  { name="Dakota Hester", email="your.email@msstate.edu" },
+]
+description = "Flow Matching for Sentinel-2 4x Super-Resolution"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "diffusers>=0.35.2",
+    "joblib>=1.5.2",
+    "matplotlib>=3.10.7",
+    "numpy>=2.3.4",
+    "pandas>=2.3.3",
+    "pcxarray>=1.1.0",
+    "rasterio>=1.4.3",
+    "scikit-learn>=1.7.2",
+    "thop>=0.1.1.post2209072238",
+    "torch>=2.9.0",
+    "torchmetrics>=1.8.2",
+    "torchvision>=0.24.0",
+    "tqdm>=4.67.1",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.scripts]
+s2flow = "s2flow.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"] 
+include = ["s2flow*"] 
+
+[tool.setuptools.package-data]
+"s2flow.assets" = ["*.joblib"]
