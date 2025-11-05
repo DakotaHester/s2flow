@@ -1,0 +1,24 @@
+import torch
+import torchvision.transforms.functional as F
+
+class StandardDataAugmentations:
+    '''
+    Simple data augmentation that applies random rotation, horizontal, and vertical flips.
+    Applies the same random transforms to all input tensors.
+    '''
+    @staticmethod
+    def __call__(*images: torch.Tensor):
+        # Generate random transforms
+        do_hflip = torch.rand(1) > 0.5
+        do_vflip = torch.rand(1) > 0.5
+        rot_angle = torch.randint(0, 4, (1,)).item() * 90
+
+        transformed = []
+        for img in images:
+            if do_hflip:
+                img = F.hflip(img)
+            if do_vflip:
+                img = F.vflip(img)
+            img = F.rotate(img, rot_angle)
+            transformed.append(img)
+        return tuple(transformed)
