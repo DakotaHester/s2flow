@@ -9,7 +9,7 @@ job:
       entity: gcer
   out_dir: ./runs/sr_training
   load_checkpoint: true
-  checkpoint_filename: latest_checkpoint.pt
+  checkpoint_filename: checkpoint.pt
 
 
 sr_model:
@@ -35,12 +35,14 @@ hyperparameters:
   batch_size: 1024
   micro_batch_size: 32
   num_epochs: 300
-  lr_scheduler:
-    type: cosine
-    warmup_epochs: 10 # set to 0 to disable warmup
-  optimizer: adamw
+  warmup_epochs: 10 # set to 0 to disable warmup
   weight_decay: 1e-2
   use_amp: true # automatic mixed precision
 
+
 metrics:
   pca_lpips_k: 2.0 # number of standard deviations to clip to for LPIPS calculation
+
+sampling:
+  num_steps: 10
+  solver: euler # options: euler, rk4

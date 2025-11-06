@@ -80,8 +80,11 @@ class FlowMatchingSRTrainer:
 
 
     @classmethod
-    def from_checkpoint(self, checkpoint_path: str):
-        raise NotImplementedError("Loading from checkpoint is not yet implemented.")
+    def from_checkpoint(cls, config: Dict[str, Any], model: nn.Module):
+        
+        trainer = cls(config, model)
+        trainer.load_checkpoint()
+        return trainer
     
     
     def fit(self, train_dataloader: DataLoader, val_dataloader: Optional[DataLoader]=None) -> None:
@@ -200,23 +203,61 @@ class FlowMatchingSRTrainer:
     
     def save_checkpoint(self):
         
-        output
+        checkpoint_path = self.config.get('job', {}).get('out_dir', './runs')
+        checkpoint_filename = self.config.get('job', {}).get('checkpoint_filename', 'checkpoint.pt')
+        checkpoint_path = os.path.join(checkpoint_path, checkpoint_filename)
+        logger.debug(f"Saving checkpoint to {checkpoint_path} at epoch {self.current_epoch}...")
         
+        checkpoint_dict = {
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'lr_scheduler_state_dict': self.lr_scheduler.state_dict(),
+            'current_epoch': self.current_epoch,
+            'metrics': self.metrics,
+        }
+        torch.save(checkpoint_dict, checkpoint_path)
+        logger.info(f"Checkpoint saved to {checkpoint_path}.")
+
         raise NotImplementedError("Saving checkpoint is not yet implemented.")
     
     
-    def save_metrics(self):
-        log_path = self.config.get('job', {}).get('out_dir', './output')
-        log_file = os.path.join(output_path, f"history.csv")
+    def load_checkpoint(self):
         
-        pd.DataFrame(self.metrics).to_csv(output_file, index=False)
+        logger.debug("Loading checkpoint...")
+        checkpoint_path = self.config.get('job', {}).get('out_dir', './runs')
+        checkpoint_filename = self.config.get('job', {}).get('checkpoint_filename', 'checkpoint.pt')
+        checkpoint_path = os.path.join(checkpoint_path, checkpoint_filename)
+        
+        checkpoint_dict = torch.load(checkpoint_path, map_location=self.device)
+        self.model.load_state_dict(checkpoint_dict['model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint_dict['optimizer_state_dict'])
+        self.lr_scheduler.load_state_dict(checkpoint_dict['lr_scheduler_state_dict'])
+        self.current_epoch = checkpoint_dict['current_epoch'] + 1
+        self.metrics = checkpoint_dict['metrics']
+        
+        logger.info(f"Loaded checkpoint from {checkpoint_path}, resuming from epoch {self.current_epoch}.")
+    
+    
+    def save_metrics(self):
+        log_path = self.config.get('job', {}).get('logging', {}).get('log_dir', './logs')
+        log_file = os.path.join(log_path, f"history.csv")
+        
+        pd.DataFrame(self.metrics).to_csv(log_file, index=False)
 
 
 class LandCoverTrainer:
     ...
     
-def train_sr_model(config: Dict[str, Any]):
-    trainer = FlowMatchingSRTrainer(config)
+def train_sr_model(config: Dict[str, Any], model: nn.Module):
+    
+    load_checkpoint = config.get('job', {}).get('load_checkpoint', False)
+    if load_checkpoint:
+        logger.info("`load_checkpoint` is True; loading trainer from checkpoint...")
+        trainer = FlowMatchingSRTrainer.from_checkpoint(config, model)
+    else:
+        logger.info("`load_checkpoint` is False; initializing new trainer...")
+        trainer = FlowMatchingSRTrainer(config, model)
+    
     logger.info("Starting super-resolution model training...")
     trainer.train(config)
 
