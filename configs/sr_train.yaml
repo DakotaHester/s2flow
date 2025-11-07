@@ -16,8 +16,8 @@ sr_model:
   model_type: unet
   sample_size: 256
   in_channels: 8
-  out_channels: 8
-  block_out_channels: [64, 128, 256, 512]
+  out_channels: 4
+  block_out_channels: [32, 32, 32, 32]
   down_block_types: ["DownBlock2D", "DownBlock2D", "DownBlock2D", "DownBlock2D"]
   up_block_types: ["UpBlock2D", "UpBlock2D", "UpBlock2D", "UpBlock2D"]
   layers_per_block: 2
@@ -26,23 +26,26 @@ sr_model:
 
 
 data:
-  samples_par_path: /path/to/sentinel2/sr/samples.parquet
-  target_dir_path: /path/to/naip/images/
-  input_dir_path: /path/to/sentinel2/images/
+  samples_par_path: /home/dhester/diffusion-examples/s2_naip_pairs_4x_multiyear/samples.par
+  data_dir_path: /home/dhester/diffusion-examples/s2_naip_pairs_4x_multiyear
+  augmentations: spatial # options: none, spatial (random flips and rotations)
+  num_workers: 4
+  pin_memory: true
 
 
 hyperparameters:
-  learning_rate: 1e-3
+  learning_rate: 0.001 # 1e-3
   batch_size: 1024
-  micro_batch_size: 32
-  num_epochs: 300
+  micro_batch_size: 16 # PCA set to 1024 for increased accuracy in IncrementalPCA
+  num_epochs: 10
   warmup_epochs: 10 # set to 0 to disable warmup
-  weight_decay: 1e-2
-  use_amp: true # automatic mixed precision
+  weight_decay: 0.01 # 1e-2
+  use_amp: false # automatic mixed precision
 
 
 metrics:
-  pca_lpips_k: 2.0 # number of standard deviations to clip to for LPIPS calculation
+  pca_lpips_clamp: true # whether to clamp PCA values for LPIPS calculation
+  pca_lpips_k: 3.0 # number of standard deviations to clip to for LPIPS calculation
 
 sampling:
   num_steps: 10

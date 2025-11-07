@@ -8,11 +8,14 @@ import numpy as np
 import rasterio as rio
 import geopandas as gpd
 from tqdm import trange
-import json
+from logging import getLogger
+from pathlib import Path
 
 from ..utils import get_device
 from ..metrics import MultispectralLPIPS
 from ..engine.sampling import get_sampler
+
+logger = getLogger(__name__)
 
 
 def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
@@ -25,9 +28,11 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
     val_samples_gdf = samples_gdf[samples_gdf['split'] == 'val'].reset_index(drop=True)
     
     batch_size = config.get('hyperparameters', {}).get('micro_batch_size', 32)
-    out_path = os.path.join(config.get('job', {}).get('out_dir', './runs'))
-    device = get_device()
+    out_path = Path(os.path.join(config.get('job', {}).get('out_dir', './runs')))
+    image_out_path = out_path / 'sr_outputs'
+    image_out_path.mkdir(parents=True, exist_ok=True)
     
+    device = get_device()
     sampler = get_sampler(config, model)
     lpips_metric = MultispectralLPIPS(config)
     
@@ -39,9 +44,10 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
         input_tensors = []
         target_tensors = []
         profiles = []
+        filenames = []
         for _, sample in batch_samples.iterrows():
-            input_path = config['data']['input_dir_path'] / f"{sample['sample_id']:06d}.tif"
-            target_path = config['data']['target_dir_path'] / f"{sample['sample_id']:06d}.tif"
+            input_path = out_path / sample['input_path']
+            target_path = out_path / sample['target_path']
             
             input_image = rio.open(input_path).read()  # [C, H, W]
             target_image = rio.open(target_path).read()  # [C, H, W]
@@ -53,6 +59,7 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
             
             input_tensors.append(input_tensor)
             target_tensors.append(target_tensor)
+            filenames.append(Path(input_path).name)
         
         input_batch = torch.stack(input_tensors).to(device)
         target_batch = torch.stack(target_tensors).to(device)
@@ -79,13 +86,21 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
             }
             # Save output image
             out_image = output_batch[i].cpu().numpy()
-            out_profile = profiles[i]
-            with rio.open(os.path.join(out_path, f"{sample_id:06d}_sr.tif"), 'w', **out_profile) as dst:
+            out_profile = profiles[i].copy()
+            with rio.open(image_out_path / filenames[i], 'w', **out_profile) as dst:
                 dst.write(out_image)
     
-    with open(os.path.join(out_path, 'sr_evaluation_metrics.json'), 'w') as f:
-        json.dump(metrics, f, indent=4)
+    metrics_df = gpd.GeoDataFrame.from_dict(metrics, orient='index')
+    metrics_df.index.name = 'sample_id'
+    metrics_df.to_csv(os.path.join(out_path, 'sr_evaluation_metrics.csv'))
+    logger.info(f"Saved image-wise SR evaluation metrics to {os.path.join(out_path, 'sr_evaluation_metrics.csv')}")
     
+    # caluclate mean, median, std, variance, etc. for each metric
+    summary_stats = metrics_df.describe().transpose()
+    summary_stats.to_csv(os.path.join(out_path, 'sr_evaluation_summary_stats.csv'))
+    logger.info(f"Saved summary SR evaluation statistics to {os.path.join(out_path, 'sr_evaluation_summary_stats.csv')}")
+    
+    logger.info('Mean SR Evaluation Metrics:' + f"\n{summary_stats['mean']}")
     # raise NotImplementedError("Super-resolution model evaluation is not yet implemented.")
 
 

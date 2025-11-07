@@ -7,16 +7,18 @@ import geopandas as gpd
 import torch
 import rasterio as rio
 
+from .transforms import get_transforms
 from .utils import scale
+
+from logging import getLogger
+logger = getLogger(__name__)
 
 class S2NAIPDataset(Dataset):
 
     def __init__(self, 
-            samples_par_path: Union[str, Path],
-            target_dir_path: Union[str, Path],
-            input_dir_path: Union[str, Path],
+            samples_gdf: gpd.GeoDataFrame,
+            data_dir_path: Union[str, Path],
             transforms: Optional[callable] = None,
-            split: Literal['train', 'val'] = 'train',
     ) -> None:
         """
         # Structure:
@@ -30,13 +32,9 @@ class S2NAIPDataset(Dataset):
         #   ...
         """
         
-        self.samples_par_path = Path(samples_par_path)
-        self.target_dir_path = Path(target_dir_path)
-        self.input_dir_path = Path(input_dir_path)
+        self.samples_gdf = samples_gdf
+        self.data_dir_path = Path(data_dir_path)
         self.transforms = transforms
-        
-        self.samples_gdf = gpd.read_parquet(self.samples_par_path)
-        self.samples_gdf = self.samples_gdf[self.samples_gdf['split'] == split].reset_index(drop=True)
             
     def __len__(self) -> int:
         return len(self.samples_gdf)
@@ -44,8 +42,8 @@ class S2NAIPDataset(Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         
         sample = self.samples_gdf.iloc[idx]
-        target_path = self.target_dir_path / f"{sample['sample_id']:06d}.tif"
-        input_path = self.input_dir_path / f"{sample['sample_id']:06d}.tif"
+        input_path = self.data_dir_path / sample['input_path']
+        target_path = self.data_dir_path / sample['target_path']
         
         input_image = rio.open(input_path).read()  # [C, H, W]
         target_image = rio.open(target_path).read()  # [C, H, W
@@ -100,4 +98,43 @@ def get_dataloaders(config: Dict[str, Any]) -> Union[Tuple[DataLoader, DataLoade
 
 def get_sr_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader]:
     
+    logger.info("Setting up super-resolution data loaders...")
+    
     data_config = config.get("data", None)
+    samples_gdf = gpd.read_parquet(data_config['samples_par_path']).iloc[:2000]
+    
+    train_dataset = S2NAIPDataset(
+        samples_gdf.loc[samples_gdf['split'] == 'train'].reset_index(drop=True),
+        data_config.get('data_dir_path', './data'), 
+        transforms=get_transforms(config)
+    )
+    
+    val_dataset = S2NAIPDataset(
+        samples_gdf.loc[samples_gdf['split'] == 'val'].reset_index(drop=True),
+        data_config.get('data_dir_path', './data'),
+        transforms=None
+    )
+    
+    logger.info(f"Training dataset size: {len(train_dataset)} samples.")
+    logger.info(f"Validation dataset size: {len(val_dataset)} samples.")
+    
+    hyperparams_config = config.get("hyperparameters", {})
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=hyperparams_config.get('micro_batch_size', 32),
+        shuffle=True,
+        num_workers=data_config.get('num_workers', 4),
+        pin_memory=data_config.get('pin_memory', True),
+        drop_last=True
+    )
+    
+    val_dataloader = DataLoader(
+        val_dataset,
+        batch_size=hyperparams_config.get('micro_batch_size', 32),
+        shuffle=False,
+        num_workers=data_config.get('num_workers', 4),
+        pin_memory=data_config.get('pin_memory', True),
+        drop_last=False
+    )
+    
+    return train_dataloader, val_dataloader

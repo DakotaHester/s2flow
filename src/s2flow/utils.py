@@ -67,15 +67,15 @@ def init_logging(config: Dict[str, Any], verbose: bool=False) -> logging.Logger:
 def get_device() -> torch.device:
     if torch.cuda.is_available():
         device = torch.device("cuda")
-        logger.debug(f'Using CUDA device: {device.get_device_name(0)}')
+        logger.debug(f'Using CUDA device: {device}')
         return device
     elif torch.backends.mps.is_available():
         device = torch.device("cuda")
-        logger.debug(f'Using MPS device: {device.get_device_name(0)}')
+        logger.debug(f'Using MPS device: {device}')
         return device
     else:
         device = torch.device("cuda")
-        logger.debug(f'Using CPU device: {device.get_device_name(0)}')
+        logger.debug(f'Using CPU device: {device}')
         return device
 
 

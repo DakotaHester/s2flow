@@ -40,6 +40,7 @@ def main():
         raise ValueError("Job type must be specified in the config under 'job.type'")
     
     elif job_type == 'sr_train':
+        sr_model_training(config, logger)
         pass
         
     elif job_type == 'sr_eval':
@@ -66,6 +67,7 @@ def main():
 
 def sr_model_training(config: Dict[str, Any], logger: logging.Logger):
     from .engine.training import FlowMatchingSRTrainer
+    from .engine.eval import sr_model_evaluation
     from .models import get_sr_model
     from .utils import get_device
     
@@ -84,11 +86,16 @@ def sr_model_training(config: Dict[str, Any], logger: logging.Logger):
         logger.info("`load_checkpoint` is False; initializing new trainer...")
         trainer = FlowMatchingSRTrainer(config, model)
     
+    logger.info("Setting up data loaders...")
+    train_loader, val_loader = get_dataloaders(config)
+    
     logger.info("Starting super-resolution model training...")
-    trainer.train(config)
+    trainer.fit(train_loader, val_loader)
     logger.info("Super-resolution model training complete.")
     
-    
+    logger.info("Starting super-resolution model evaluation...")
+    sr_model_evaluation(config, model)
+    logger.info("Super-resolution model evaluation complete.")
     
 
 def sr_model_inference(config: Dict[str, Any], logger: logging.Logger):

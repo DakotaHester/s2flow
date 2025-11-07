@@ -1,7 +1,8 @@
 import logging
 import os
+from pathlib import Path
 import pandas as pd
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -21,6 +22,13 @@ class FlowMatchingSRTrainer:
         self.config = config
         self.device = get_device()
         self.model = model.to(self.device)
+        
+        # model output directory
+        self.out_dir = Path(config.get('job', {}).get('out_dir', './runs'))
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        self.checkpoint_path = self.out_dir / config.get('job', {}).get('checkpoint_filename', 'checkpoint.pt')
+        self.log_dir = Path(config.get('job', {}).get('logging', {}).get('log_dir', './logs'))
+        self.log_dir.mkdir(parents=True, exist_ok=True)
         
         hyperparameters = config.get('hyperparameters', None)
         if hyperparameters is None:
@@ -55,13 +63,15 @@ class FlowMatchingSRTrainer:
             schedulers=[self.warmup_scheduler, self.cosine_scheduler],
             milestones=[self.warmup_epochs],
         )
+        self.current_epoch = 1
         
+        self.hp_dtype = torch.float32
         if self.use_amp:
             self.hp_dtype = get_hp_dtype()
-            if self.hp_dtype != torch.bfloat16:
-                self.scaler = GradScaler()
+        
+        if self.hp_dtype != torch.float32:
+            self.scaler = GradScaler(enabled=True)
         else:
-            self.hp_dtype = torch.float32
             self.scaler = None
         
         self.lpips_metric = MultispectralLPIPS(config)
@@ -70,13 +80,12 @@ class FlowMatchingSRTrainer:
             'epoch': [],
             'lr': [],
         }
+        self.metric_names = ['l1_loss', 'psnr', 'ssim', 'mssim', 'lpips']
         for phase in ('train', 'val'):
-            for metric in ('l1_loss', 'ssim', 'mssim', 'psnr', 'lpips'):
+            for metric in self.metric_names:
                 self.metrics[f'{phase}_{metric}'] = []
-        
-        self.current_epoch = 1 # start from epoch 1
-        
-        logger.info(f"Initialized FlowMatchingSRTrainer on device {self.device} with model {type(self.model).__name__}")
+                
+        logger.info(f"Initialized {self.__class__.__name__} on device {self.device} with model {type(self.model).__name__}")
 
 
     @classmethod
@@ -95,15 +104,16 @@ class FlowMatchingSRTrainer:
             self.metrics['epoch'].append(epoch)
             self.metrics['lr'].append(self.optimizer.param_groups[0]['lr'])
             
-            logger.info(f"Starting epoch {epoch}/{self.num_epochs}...")
+            logger.debug(f"Starting epoch {epoch}/{self.num_epochs}...")
             epoch_metrics = self._run_epoch(train_dataloader, val_dataloader)
             
-            for metric in ('l1_loss', 'ssim', 'mssim', 'psnr', 'lpips'):
+            for metric in self.metric_names:
                 for phase in ('train', 'val'):
                     self.metrics[f'{phase}_{metric}'].append(epoch_metrics.get(f'{phase}_{metric}', None))
             
             self.lr_scheduler.step()
             self.save_checkpoint()
+            self.save_model()
             self.save_metrics()
     
     
@@ -118,7 +128,7 @@ class FlowMatchingSRTrainer:
         
         epoch_metrics = {
             f'{phase}_{metric}': 0.0
-            for metric in ('l1_loss', 'ssim', 'mssim', 'psnr', 'lpips')
+            for metric in self.metric_names
             for phase in phases
         }
         
@@ -146,18 +156,19 @@ class FlowMatchingSRTrainer:
                         epoch_metrics[k] += v
                     
                     metrics_fmt = {'lr': f'{self.optimizer.param_groups[0]["lr"]:.2e}'}
-                    for metric in ('l1_loss', 'ssim', 'mssim', 'psnr', 'lpips'):
+                    for metric in self.metric_names:
                         avg = epoch_metrics[f'{phase}_{metric}'] / phase_count
                         metrics_fmt[metric] = f'{avg:.2e}'
                     pbar.set_postfix(metrics_fmt)
                     logger.debug(f'Epoch {self.current_epoch} {phase} step {batch_num} metrics:\n', '\n'.join([f'{k}: {v}' for k, v in metrics_fmt.items()]))
 
-            for metric in ('l1_loss', 'ssim', 'mssim', 'psnr', 'lpips'):
+            for metric in self.metric_names:
                 epoch_metrics[f'{phase}_{metric}'] /= phase_count
             
         return epoch_metrics
-        
-    def _step(self, batch_num: int, batch_data: Any, phase: str) -> Dict[str, float]:
+
+      
+    def _step(self, batch_num: int, batch_data: Tuple[torch.Tensor], phase: str) -> Dict[str, float]:
         
         input_img, target_img = batch_data
         input_img, target_img = input_img.to(self.device), target_img.to(self.device)
@@ -195,18 +206,15 @@ class FlowMatchingSRTrainer:
         return {
             f'{phase}_l1_loss': loss.detach().sum().item(),
             f'{phase}_psnr': TMF.image.peak_signal_noise_ratio(pred_image, target_img, data_range=(-1, 1), reduction='none', dim=(1, 2, 3)).sum().item(),
-            f'{phase}_ssim': TMF.image.ssim(pred_image, target_img, data_range=(-1, 1), reduction='none').sum().item(),
-            f'{phase}_mssim': TMF.image.multi_scale_ssim(pred_image, target_img, data_range=(-1, 1), reduction='none').sum().item(),
+            f'{phase}_ssim': TMF.image.structural_similarity_index_measure(pred_image, target_img, data_range=(-1, 1), reduction='none').sum().item(),
+            f'{phase}_mssim': TMF.image.multiscale_structural_similarity_index_measure(pred_image, target_img, data_range=(-1, 1), reduction='none').sum().item(),
             f'{phase}_lpips': self.lpips_metric.forward(pred_image, target_img, reduction='none').sum().item(),
         }
-        
     
+
     def save_checkpoint(self):
         
-        checkpoint_path = self.config.get('job', {}).get('out_dir', './runs')
-        checkpoint_filename = self.config.get('job', {}).get('checkpoint_filename', 'checkpoint.pt')
-        checkpoint_path = os.path.join(checkpoint_path, checkpoint_filename)
-        logger.debug(f"Saving checkpoint to {checkpoint_path} at epoch {self.current_epoch}...")
+        logger.debug(f"Saving checkpoint to {self.checkpoint_path} at epoch {self.current_epoch}...")
         
         checkpoint_dict = {
             'model_state_dict': self.model.state_dict(),
@@ -215,34 +223,39 @@ class FlowMatchingSRTrainer:
             'current_epoch': self.current_epoch,
             'metrics': self.metrics,
         }
-        torch.save(checkpoint_dict, checkpoint_path)
-        logger.info(f"Checkpoint saved to {checkpoint_path}.")
-
-        raise NotImplementedError("Saving checkpoint is not yet implemented.")
+        torch.save(checkpoint_dict, self.checkpoint_path)
+        logger.debug(f"Checkpoint saved to {self.checkpoint_path}.")
     
     
     def load_checkpoint(self):
         
-        logger.debug("Loading checkpoint...")
-        checkpoint_path = self.config.get('job', {}).get('out_dir', './runs')
-        checkpoint_filename = self.config.get('job', {}).get('checkpoint_filename', 'checkpoint.pt')
-        checkpoint_path = os.path.join(checkpoint_path, checkpoint_filename)
+        logger.debug(f"Loading checkpoint from {self.checkpoint_path}...")
         
-        checkpoint_dict = torch.load(checkpoint_path, map_location=self.device)
+        if not self.checkpoint_path.exists():
+            logger.warning(f"Checkpoint file {self.checkpoint_path} does not exist. Starting from scratch.")
+            return
+        
+        checkpoint_dict = torch.load(self.checkpoint_path, map_location=self.device)
         self.model.load_state_dict(checkpoint_dict['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint_dict['optimizer_state_dict'])
         self.lr_scheduler.load_state_dict(checkpoint_dict['lr_scheduler_state_dict'])
         self.current_epoch = checkpoint_dict['current_epoch'] + 1
         self.metrics = checkpoint_dict['metrics']
         
-        logger.info(f"Loaded checkpoint from {checkpoint_path}, resuming from epoch {self.current_epoch}.")
+        logger.info(f"Loaded checkpoint from {self.checkpoint_path}, resuming from epoch {self.current_epoch}.")
     
     
     def save_metrics(self):
-        log_path = self.config.get('job', {}).get('logging', {}).get('log_dir', './logs')
-        log_file = os.path.join(log_path, f"history.csv")
+        log_file = self.log_dir / 'training_metrics.csv'
+        logger.debug(f"Saving training metrics to {log_file}...")
         
         pd.DataFrame(self.metrics).to_csv(log_file, index=False)
+    
+    def save_model(self):
+        model_file = self.out_dir / 'model.pt'
+        logger.debug(f"Saving model to {model_file}...")
+        torch.save(self.model.state_dict(), model_file)
+        logger.debug(f"Model saved to {model_file}.")
 
 
 class LandCoverTrainer:
