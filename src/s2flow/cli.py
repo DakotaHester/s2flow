@@ -3,6 +3,7 @@ import os
 from typing import Any, Dict
 import yaml
 import logging
+import torch
 from .data.datasets import get_dataloaders
 from .utils import init_logging
 
@@ -39,8 +40,7 @@ def main():
         raise ValueError("Job type must be specified in the config under 'job.type'")
     
     elif job_type == 'sr_train':
-        from s2flow.engine.training import train_sr_model
-        train_sr_model(config)
+        pass
         
     elif job_type == 'sr_eval':
         raise NotImplementedError("Super-resolution model evaluation is not yet implemented.")
@@ -62,6 +62,34 @@ def main():
             f"Unknown job type: {job_type}. Must be one of 'sr_train'," + \
             "'sr_eval', 'sr_inference', 'lc_train', 'lc_eval', 'lc_inference'."
         )
+
+
+def sr_model_training(config: Dict[str, Any], logger: logging.Logger):
+    from .engine.training import FlowMatchingSRTrainer
+    from .models import get_sr_model
+    from .utils import get_device
+    
+    model = get_sr_model(config)
+    pretrained_weights = config.get('sr_model', {}).get('pretrained_weights', None)
+    if pretrained_weights is not None:
+        logger.info(f"Loading pretrained weights from {pretrained_weights}...")
+        model.load_state_dict(torch.load(pretrained_weights, map_location=get_device(), weights_only=True))
+        logger.info("Pretrained weights loaded successfully.")
+    
+    load_checkpoint = config.get('job', {}).get('load_checkpoint', False)
+    if load_checkpoint:
+        logger.info("`load_checkpoint` is True; loading trainer from checkpoint...")
+        trainer = FlowMatchingSRTrainer.from_checkpoint(config, model)
+    else:
+        logger.info("`load_checkpoint` is False; initializing new trainer...")
+        trainer = FlowMatchingSRTrainer(config, model)
+    
+    logger.info("Starting super-resolution model training...")
+    trainer.train(config)
+    logger.info("Super-resolution model training complete.")
+    
+    
+    
 
 def sr_model_inference(config: Dict[str, Any], logger: logging.Logger):
     raise NotImplementedError("Super-resolution model inference is not yet implemented.")

@@ -7,6 +7,8 @@ import geopandas as gpd
 import torch
 import rasterio as rio
 
+from .utils import scale
+
 class S2NAIPDataset(Dataset):
 
     def __init__(self, 
@@ -44,6 +46,20 @@ class S2NAIPDataset(Dataset):
         sample = self.samples_gdf.iloc[idx]
         target_path = self.target_dir_path / f"{sample['sample_id']:06d}.tif"
         input_path = self.input_dir_path / f"{sample['sample_id']:06d}.tif"
+        
+        input_image = rio.open(input_path).read()  # [C, H, W]
+        target_image = rio.open(target_path).read()  # [C, H, W
+        
+        input_tensor = torch.from_numpy(input_image).float()
+        target_tensor = torch.from_numpy(target_image).float()
+        
+        input_tensor = scale(input_tensor, in_range=(0, 10000), out_range=(-1.0, 1.0))
+        target_tensor = scale(target_tensor, in_range=(0, 10000), out_range=(-1.0, 1.0))
+        
+        if self.transforms is not None:
+            input_tensor, target_tensor = self.transforms(input_tensor, target_tensor)
+        
+        return input_tensor, target_tensor
     
 
 class S2CPBDataset(Dataset):

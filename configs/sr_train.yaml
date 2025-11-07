@@ -22,6 +22,7 @@ sr_model:
   up_block_types: ["UpBlock2D", "UpBlock2D", "UpBlock2D", "UpBlock2D"]
   layers_per_block: 2
   num_norm_groups: 32
+  pretrained_weights: null # path to pretrained weights, if any
 
 
 data:

@@ -260,6 +260,8 @@ def train_sr_model(config: Dict[str, Any], model: nn.Module):
     
     logger.info("Starting super-resolution model training...")
     trainer.train(config)
+    logger.info("Super-resolution model training complete.")
+    
 
 
 def train_lc_model(config: Dict[str, Any]):
