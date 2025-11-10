@@ -1,11 +1,17 @@
 import argparse
-import os
+from pathlib import Path
+from shutil import copy2
 from typing import Any, Dict
 import yaml
 import logging
 import torch
 from .data.datasets import get_dataloaders
 from .utils import init_logging
+
+torch.manual_seed(1701)
+torch.cuda.manual_seed_all(1701)
+torch.backends.cudnn.benchmark = True
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train a Super-Resolution Model using Flow Matching")
@@ -27,12 +33,35 @@ def parse_args() -> argparse.Namespace:
 def main():
     
     args = parse_args()
-    if not os.path.exists(args.config):
+    config_path = Path(args.config)
+    if not config_path.exists():
         raise FileNotFoundError(f"Config file not found at {args.config}")
     
-    with open(args.config, 'r') as f:
+    with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     
+    torch.backends.cudnn.deterministic = config.get('job', {}).get('cudnn_deterministic', False)
+    
+    # configure paths
+    job_name = config.get('job', {}).get('name', None)
+    if job_name is None:
+        raise ValueError("Job name must be specified in the config under 'job.name'")
+    
+    log_path = Path(config.get('job', {}).get('logging', {}).get('log_dir', './logs'))
+    log_path = log_path / job_name
+    log_path.mkdir(parents=True, exist_ok=True)
+    
+    # copy config file to log directory for reference
+    copy2(config_path, log_path / 'config.yaml')
+    
+    out_path = Path(config.get('job', {}).get('out_dir', './runs'))
+    out_path = out_path / job_name
+    out_path.mkdir(parents=True, exist_ok=True)
+    
+    config['paths'] = {
+        'log_path': log_path,
+        'out_path': out_path
+    }
     logger = init_logging(config, verbose=args.verbose)
     
     job_type = config.get("job", {}).get("type", None)
@@ -40,11 +69,10 @@ def main():
         raise ValueError("Job type must be specified in the config under 'job.type'")
     
     elif job_type == 'sr_train':
-        sr_model_training(config, logger)
-        pass
+        train_sr_model(config, logger)
         
     elif job_type == 'sr_eval':
-        raise NotImplementedError("Super-resolution model evaluation is not yet implemented.")
+        eval_sr_model(config, logger)
     
     elif job_type == 'sr_inference':
         sr_model_inference(config, logger)
@@ -65,7 +93,7 @@ def main():
         )
 
 
-def sr_model_training(config: Dict[str, Any], logger: logging.Logger):
+def train_sr_model(config: Dict[str, Any], logger: logging.Logger):
     from .engine.training import FlowMatchingSRTrainer
     from .engine.eval import sr_model_evaluation
     from .models import get_sr_model
@@ -96,6 +124,26 @@ def sr_model_training(config: Dict[str, Any], logger: logging.Logger):
     logger.info("Starting super-resolution model evaluation...")
     sr_model_evaluation(config, model)
     logger.info("Super-resolution model evaluation complete.")
+
+
+@torch.no_grad()
+def eval_sr_model(config: Dict[str, Any], logger: logging.Logger):
+    from .engine.eval import sr_model_evaluation
+    from .models import get_sr_model
+    from .utils import get_device
+    
+    model = get_sr_model(config)
+    logger.info("Loading pretrained weights for evaluation...")
+    weights_path = config.get('sr_model', {}).get('pretrained_weights', None)
+    
+    if weights_path is None:
+        raise ValueError("Pretrained weights path must be specified in the config under 'sr_model.pretrained_weights' when running evaluation jobs.")
+    
+    weights = torch.load(weights_path, map_location=get_device(), weights_only=True)
+    model.load_state_dict(weights, strict=False)
+    logger.info("Pretrained weights loaded successfully.")
+
+    sr_model_evaluation(config, model)
     
 
 def sr_model_inference(config: Dict[str, Any], logger: logging.Logger):

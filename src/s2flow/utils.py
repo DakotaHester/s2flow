@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def init_logging(config: Dict[str, Any], verbose: bool=False) -> logging.Logger:
     
     logging.Formatter.converter = gmtime
-    log_fmt = '[%(asctime)sZ] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s'
+    log_fmt = '[%(asctime)s] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s'
     date_fmt = '%Y-%m-%d %H:%M:%SZ'
     formatter = logging.Formatter(fmt=log_fmt, datefmt=date_fmt)
     
@@ -31,17 +31,10 @@ def init_logging(config: Dict[str, Any], verbose: bool=False) -> logging.Logger:
     root_logger.debug("Initialized console logging")
     
     # log to file
-    job_config = config.get("job", None)
-    if job_config is None:
-        raise ValueError("Job configuration must be specified in the config under 'job'")
+    log_path = config['paths']['log_path']  # raise KeyError if not found - this should be set up already
+    job_name = config.get('job', {}).get('name', 'default_job')
     
-    job_name = job_config.get("name", None)
-    if job_name is None:
-        raise ValueError("Job name must be specified in the config under 'job.name'")
-    log_dir = Path(job_config.get("logging", {}).get("log_dir", "./logs"))
-    log_dir.mkdir(parents=True, exist_ok=True)\
-    
-    log_file = log_dir / f"{job_name}.log"
+    log_file = log_path / f"{job_name}.log"
     if log_file.exists():
         root_logger.warning(f"Log file {log_file} already exists and will be overwritten.")
         log_file.unlink() 

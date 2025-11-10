@@ -1,0 +1,44 @@
+job:
+  name: s2flow_sr_train
+  type: sr_train
+  log_dir: ./logs
+  out_dir: ./runs
+  load_checkpoint: False
+  checkpoint_filename: checkpoint.pt
+  cudnn_deterministic: False # set to False for faster training
+
+sr_model:
+  model_type: unet
+  sample_size: 256
+  in_channels: 8
+  out_channels: 4
+  block_out_channels: [64, 128, 256, 512]
+  down_block_types: ['DownBlock2D', 'DownBlock2D', 'DownBlock2D', 'DownBlock2D']
+  up_block_types: ['UpBlock2D', 'UpBlock2D', 'UpBlock2D', 'UpBlock2D']
+  layers_per_block: 2
+  norm_num_groups: 32
+  pretrained_weights: null # if eval/inference, need to specify path to pretrained weights
+
+data:
+  samples_par_path: ./data/s2flow-s2naip/samples.par
+  data_dir_path: ./data/s2flow-s2naip
+  augmentations: spatial
+  num_workers: 8
+  pin_memory: True
+  
+hyperparameters:
+  learning_rate: 0.001
+  batch_size: 1024
+  micro_batch_size: 32 # set to 1024 for PCA computation
+  num_epochs: 100
+  warmup_epochs: 10
+  weight_decay: 0.01
+  use_amp: True
+
+metrics:
+  pca_lpips_clamp: True
+  pca_lpips_k: 3.0
+
+sampling:
+  num_steps: 50
+  solver: euler

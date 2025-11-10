@@ -1,7 +1,6 @@
 from typing_extensions import Literal
 from torch.utils.data import Dataset, DataLoader
 from typing import Any, List, Tuple, Union, Optional, Dict
-import os
 from pathlib import Path
 import geopandas as gpd
 import torch
@@ -101,7 +100,7 @@ def get_sr_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader]:
     logger.info("Setting up super-resolution data loaders...")
     
     data_config = config.get("data", None)
-    samples_gdf = gpd.read_parquet(data_config['samples_par_path']).iloc[:2000]
+    samples_gdf = gpd.read_parquet(data_config['samples_par_path'])
     
     train_dataset = S2NAIPDataset(
         samples_gdf.loc[samples_gdf['split'] == 'train'].reset_index(drop=True),

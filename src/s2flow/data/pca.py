@@ -1,5 +1,5 @@
-import os
 import logging
+from pathlib import Path
 from typing import Any, Dict, Optional
 import numpy as np
 from tqdm import tqdm
@@ -58,11 +58,7 @@ class PCAConvLayer(nn.Module):
         self.register_buffer('pca_std', torch.from_numpy(pca_std).view(1, 3, 1, 1))
 
 
-    def forward(self, x):
-        """Return raw PCA scores (B,3,H,W)."""
-        return self.pca_conv(x)
-
-    def to_lpips(self, x, k: Optional[float]=1.0, clamp: bool=False):
+    def forward(self, x, k: Optional[float]=1.0, clamp: bool=False):
         """
         Convert original 4-ch input x -> scaled PCA image suitable for LPIPS.
         - k: number of stds that should map to 1.0 (default=2.0).
@@ -76,11 +72,11 @@ class PCAConvLayer(nn.Module):
 
 def load_pca(config: Dict[str, Any]) -> Dict[str, Any]:
     
-    assets_path = files("s2flow.assets")
-    pca_path = os.path.join(assets_path, "pca.joblib")
+    assets_path = Path(files("s2flow.assets"))
+    pca_path = assets_path / "pca.joblib"
     logger.debug(f"Loading PCA data from {pca_path}")
     
-    if os.path.exists(pca_path):
+    if pca_path.exists():
         pca = load(pca_path)
         
     else:
@@ -98,9 +94,9 @@ def fit_and_save_pca(dataloader: DataLoader, n_components: int = 3) -> Dict[str,
     """
     Fits StandardScaler and IncrementalPCA on the provided dataloader and saves to disk.
     """
-    assets_path = files("s2flow.assets")
-    save_path = os.path.join(assets_path, "pca.joblib")
-    if os.path.exists(save_path):
+    assets_path = Path(files("s2flow.assets"))
+    save_path = assets_path / "pca.joblib"
+    if save_path.exists():
         logger.warning(f"PCA model already exists at {save_path}. It will be overwritten.")
 
     logger.info(f"Fitting new PCA model. This may take a while...")
@@ -128,7 +124,7 @@ def fit_and_save_pca(dataloader: DataLoader, n_components: int = 3) -> Dict[str,
         pca.partial_fit(pixels_std)
 
     # Save
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    save_path.mkdir(parents=True, exist_ok=True)
     dump({'standardscaler': scaler, 'pca': pca}, save_path)
     logger.info(f"PCA data saved to {save_path}")
     

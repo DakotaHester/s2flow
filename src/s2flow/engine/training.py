@@ -1,5 +1,4 @@
 import logging
-import os
 from pathlib import Path
 import pandas as pd
 from typing import Dict, Any, Optional, Tuple
@@ -24,11 +23,9 @@ class FlowMatchingSRTrainer:
         self.model = model.to(self.device)
         
         # model output directory
-        self.out_dir = Path(config.get('job', {}).get('out_dir', './runs'))
-        self.out_dir.mkdir(parents=True, exist_ok=True)
-        self.checkpoint_path = self.out_dir / config.get('job', {}).get('checkpoint_filename', 'checkpoint.pt')
-        self.log_dir = Path(config.get('job', {}).get('logging', {}).get('log_dir', './logs'))
-        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.out_path = config['paths']['out_path']
+        self.checkpoint_path = self.out_path / config.get('job', {}).get('checkpoint_filename', 'checkpoint.pt')
+        self.log_path = config['paths']['log_path']
         
         hyperparameters = config.get('hyperparameters', None)
         if hyperparameters is None:
@@ -46,7 +43,7 @@ class FlowMatchingSRTrainer:
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
             lr=self.init_learning_rate,
-            weight_decay=hyperparameters.get('weight_decay', 1e-2),
+            weight_decay=self.weight_decay,
         )
         self.warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
             self.optimizer,
@@ -68,6 +65,9 @@ class FlowMatchingSRTrainer:
         self.hp_dtype = torch.float32
         if self.use_amp:
             self.hp_dtype = get_hp_dtype()
+            logger.info(f"Using AMP with dtype: {self.hp_dtype}")
+        else:
+            logger.info("AMP disabled; using full precision (float32).")
         
         if self.hp_dtype != torch.float32:
             self.scaler = GradScaler(enabled=True)
@@ -143,27 +143,28 @@ class FlowMatchingSRTrainer:
                 self.model.eval()
                 dataloader = val_dataloader
             
-            phase_count = 0
+            samples_seen = 0
             self.optimizer.zero_grad(set_to_none=True)
             
             with tqdm(dataloader, desc=f"{phase.capitalize()} Epoch {self.current_epoch}/{self.num_epochs}", unit="batches") as pbar:
                 for batch_num, batch_data in enumerate(pbar):
                     
                     step_metrics = self._step(batch_num, batch_data, phase)
-                    phase_count += batch_data[0].size(0)
+                    samples_seen += batch_data[0].size(0)
                     
                     for k, v in step_metrics.items():
                         epoch_metrics[k] += v
                     
                     metrics_fmt = {'lr': f'{self.optimizer.param_groups[0]["lr"]:.2e}'}
                     for metric in self.metric_names:
-                        avg = epoch_metrics[f'{phase}_{metric}'] / phase_count
+                        avg = epoch_metrics[f'{phase}_{metric}'] / samples_seen
                         metrics_fmt[metric] = f'{avg:.2e}'
                     pbar.set_postfix(metrics_fmt)
-                    logger.debug(f'Epoch {self.current_epoch} {phase} step {batch_num} metrics:\n', '\n'.join([f'{k}: {v}' for k, v in metrics_fmt.items()]))
-
+                    logger.debug(f'Epoch {self.current_epoch} {phase} step {batch_num} metrics: ' + 
+                                '\n'.join([f'{k}: {v}' for k, v in metrics_fmt.items()]))
+                    
             for metric in self.metric_names:
-                epoch_metrics[f'{phase}_{metric}'] /= phase_count
+                epoch_metrics[f'{phase}_{metric}'] /= samples_seen
             
         return epoch_metrics
 
@@ -208,7 +209,7 @@ class FlowMatchingSRTrainer:
             f'{phase}_psnr': TMF.image.peak_signal_noise_ratio(pred_image, target_img, data_range=(-1, 1), reduction='none', dim=(1, 2, 3)).sum().item(),
             f'{phase}_ssim': TMF.image.structural_similarity_index_measure(pred_image, target_img, data_range=(-1, 1), reduction='none').sum().item(),
             f'{phase}_mssim': TMF.image.multiscale_structural_similarity_index_measure(pred_image, target_img, data_range=(-1, 1), reduction='none').sum().item(),
-            f'{phase}_lpips': self.lpips_metric.forward(pred_image, target_img, reduction='none').sum().item(),
+            f'{phase}_lpips': self.lpips_metric(pred_image, target_img).sum().item(),
         }
     
 
@@ -246,13 +247,13 @@ class FlowMatchingSRTrainer:
     
     
     def save_metrics(self):
-        log_file = self.log_dir / 'training_metrics.csv'
+        log_file = self.log_path / 'training_metrics.csv'
         logger.debug(f"Saving training metrics to {log_file}...")
         
         pd.DataFrame(self.metrics).to_csv(log_file, index=False)
     
     def save_model(self):
-        model_file = self.out_dir / 'model.pt'
+        model_file = self.out_path / 'model.pt'
         logger.debug(f"Saving model to {model_file}...")
         torch.save(self.model.state_dict(), model_file)
         logger.debug(f"Model saved to {model_file}.")
@@ -272,12 +273,12 @@ def train_sr_model(config: Dict[str, Any], model: nn.Module):
         trainer = FlowMatchingSRTrainer(config, model)
     
     logger.info("Starting super-resolution model training...")
-    trainer.train(config)
+    trainer.fit(config)
     logger.info("Super-resolution model training complete.")
     
 
 
 def train_lc_model(config: Dict[str, Any]):
     trainer = LandCoverTrainer()
-    logger.info("Starting land cover model training...")
+    logger.fit("Starting land cover model training...")
     trainer.train(config)

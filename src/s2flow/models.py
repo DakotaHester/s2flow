@@ -1,3 +1,4 @@
+from pathlib import Path
 import torch
 import torch.nn as nn
 from thop import profile
@@ -5,9 +6,9 @@ from diffusers.models import UNet2DModel
 from typing import Dict, Any, Optional, Union
 from logging import getLogger
 import json
-import os
-
 from .utils import get_device
+
+logger = getLogger(__name__)
 
 class UNetTensorWrapper(nn.Module):
     """
@@ -42,7 +43,6 @@ class UNetTensorWrapper(nn.Module):
             class_labels=class_labels
         ).sample # Return only the sample tensor (inportant!)
 
-logger = getLogger(__name__)
 
 def get_sr_model(config: Dict[str, Any]) -> nn.Module:
     """Instantiate and return the model based on the provided configuration."""
@@ -70,11 +70,11 @@ def get_sr_model(config: Dict[str, Any]) -> nn.Module:
     logger.info(f"Model MACs: {model_complexity_dict['macs']:,}")
     logger.info(f"Model FLOPs: {model_complexity_dict['flops']:,}")
     
-    log_dir = config.get('job', {}).get('logging', {}).get('log_dir', './logs')
-    os.makedirs(log_dir, exist_ok=True)
-    with open(os.path.join(log_dir, 'model_complexity.json'), 'w') as f:
+    log_path = config['paths']['log_path'] # raise KeyError if not found - this should be set up already
+    
+    with open(log_path / 'model_complexity.json', 'w') as f:
         json.dump(model_complexity_dict, f, indent=4)
-        logger.debug(f"Saved model complexity metrics to {os.path.join(log_dir, 'model_complexity.json')}")
+        logger.debug(f"Saved model complexity metrics to {log_path / 'model_complexity.json'}")
     
     return model
 

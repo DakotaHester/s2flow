@@ -13,3 +13,4 @@ wheels/
 runs/
 logs/
 # data/
+data/s2flow-s2naip
