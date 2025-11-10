@@ -45,22 +45,27 @@ class FlowMatchingSRTrainer:
             lr=self.init_learning_rate,
             weight_decay=self.weight_decay,
         )
-        self.warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
-            self.optimizer,
-            start_factor=0.1,
-            end_factor=1.0,
-            total_iters=self.warmup_epochs - 1,
-        )
-        self.cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        self.current_epoch = 1
+
+        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer,
             T_max=self.num_epochs - self.warmup_epochs,
         )
-        self.lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
-            self.optimizer,
-            schedulers=[self.warmup_scheduler, self.cosine_scheduler],
-            milestones=[self.warmup_epochs],
-        )
-        self.current_epoch = 1
+        if self.warmup_epochs > 0:
+            warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+                self.optimizer,
+                start_factor=0.1,
+                end_factor=1.0,
+                total_iters=self.warmup_epochs - 1,
+            )
+            self.lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
+                self.optimizer,
+                schedulers=[warmup_scheduler, cosine_scheduler],
+                milestones=[self.warmup_epochs],
+            )
+        else:
+            self.lr_scheduler = cosine_scheduler
+        
         
         self.hp_dtype = torch.float32
         if self.use_amp:
