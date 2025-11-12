@@ -43,7 +43,6 @@ class UNetTensorWrapper(nn.Module):
             class_labels=class_labels
         ).sample # Return only the sample tensor (inportant!)
 
-
 def get_sr_model(config: Dict[str, Any]) -> nn.Module:
     """Instantiate and return the model based on the provided configuration."""
     model_config = config.get("sr_model", {})

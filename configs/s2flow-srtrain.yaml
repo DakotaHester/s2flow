@@ -27,11 +27,11 @@ data:
   pin_memory: True
   
 hyperparameters:
-  learning_rate: 0.001
-  batch_size: 1024
-  micro_batch_size: 32 # set to 1024 for PCA computation
+  learning_rate: 0.0001
+  batch_size: 32
+  micro_batch_size: 16 # set to 1024 for PCA computation
   num_epochs: 100
-  warmup_epochs: 10
+  warmup_epochs: 10 # just a test for now
   weight_decay: 0.01
   use_amp: True
 

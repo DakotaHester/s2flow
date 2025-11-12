@@ -184,8 +184,8 @@ class FlowMatchingSRTrainer:
         t_batch = t.view(-1, 1, 1, 1)
         
         # linear interpolation between input and noise to form optimal transport map
-        x_t = (1 - t_batch) * x_0 + t_batch * input_img
-        target_vector = input_img - x_0
+        x_t = (1 - t_batch) * x_0 + t_batch * target_img
+        target_vector = target_img - x_0
         model_input = torch.cat([x_t, input_img], dim=1)
         
         with autocast(device_type=self.device.type, dtype=self.hp_dtype, enabled=self.use_amp):
@@ -229,6 +229,10 @@ class FlowMatchingSRTrainer:
             'current_epoch': self.current_epoch,
             'metrics': self.metrics,
         }
+        
+        if self.scaler is not None:
+            checkpoint_dict['scaler_state_dict'] = self.scaler.state_dict()
+        
         torch.save(checkpoint_dict, self.checkpoint_path)
         logger.debug(f"Checkpoint saved to {self.checkpoint_path}.")
     
@@ -247,6 +251,9 @@ class FlowMatchingSRTrainer:
         self.lr_scheduler.load_state_dict(checkpoint_dict['lr_scheduler_state_dict'])
         self.current_epoch = checkpoint_dict['current_epoch'] + 1
         self.metrics = checkpoint_dict['metrics']
+        
+        if self.scaler is not None and 'scaler_state_dict' in checkpoint_dict:
+            self.scaler.load_state_dict(checkpoint_dict['scaler_state_dict'])
         
         logger.info(f"Loaded checkpoint from {self.checkpoint_path}, resuming from epoch {self.current_epoch}.")
     

@@ -42,4 +42,6 @@ class MultispectralLPIPS:
             pred_pca = self.pca_layer(pred_img, k=self.k, clamp=self.clamp)  # B,3,H,W
             naip_pca = self.pca_layer(naip_img, k=self.k, clamp=self.clamp)  # B,3,H,W
             
-            return self.tv_metric(pred_pca, naip_pca)
+            lpips = self.tv_metric(pred_pca, naip_pca)
+        self.tv_metric.reset()
+        return lpips  # B, tensor
