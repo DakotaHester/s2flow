@@ -27,6 +27,7 @@ class UNetTensorWrapper(nn.Module):
             up_block_types=config.get("up_block_types", ["UpBlock2D"] * 4),
             layers_per_block=config.get("layers_per_block", 2),
             norm_num_groups=config.get("norm_num_groups", 32),
+            time_embedding_type=config.get("time_embedding_type", "positional"),
         )
 
     def forward(

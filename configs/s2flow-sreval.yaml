@@ -1,0 +1,37 @@
+job:
+  name: s2flow_sr_eval_test
+  type: sr_eval
+  log_dir: ./logs
+  out_dir: ./runs
+  cudnn_deterministic: False # set to False for faster training
+
+sr_model:
+  model_type: unet
+  sample_size: 256
+  in_channels: 8
+  out_channels: 4
+  block_out_channels: [64, 128, 256, 512]
+  down_block_types: ['DownBlock2D', 'DownBlock2D', 'DownBlock2D', 'DownBlock2D']
+  up_block_types: ['UpBlock2D', 'UpBlock2D', 'UpBlock2D', 'UpBlock2D']
+  layers_per_block: 2
+  norm_num_groups: 32
+  time_embedding_type: positional
+  pretrained_weights: 'runs/s2flow_sr_train_20251113/model.pt'
+
+data:
+  samples_par_path: ./data/s2flow-s2naip/samples.par
+  data_dir_path: ./data/s2flow-s2naip
+  augmentations: spatial
+  num_workers: 8
+  pin_memory: True
+  
+hyperparameters:
+  micro_batch_size: 8 # set to 1024 for PCA computation
+
+metrics:
+  pca_lpips_clamp: True
+  pca_lpips_k: 3.0
+
+sampling:
+  num_steps: 100
+  solver: euler

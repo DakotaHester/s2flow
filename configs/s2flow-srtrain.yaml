@@ -17,6 +17,7 @@ sr_model:
   up_block_types: ['UpBlock2D', 'UpBlock2D', 'UpBlock2D', 'UpBlock2D']
   layers_per_block: 2
   norm_num_groups: 32
+  time_embedding_type: positional
   pretrained_weights: null # if eval/inference, need to specify path to pretrained weights
 
 data:
@@ -40,5 +41,5 @@ metrics:
   pca_lpips_k: 3.0
 
 sampling:
-  num_steps: 50
+  num_steps: 100
   solver: euler

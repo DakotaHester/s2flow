@@ -189,7 +189,7 @@ class FlowMatchingSRTrainer:
         model_input = torch.cat([x_t, input_img], dim=1)
         
         with autocast(device_type=self.device.type, dtype=self.hp_dtype, enabled=self.use_amp):
-            pred_vector = self.model(model_input, t)
+            pred_vector = self.model(model_input, t * 1000) # scale t to [0, 1000] for time embedding
             loss = F.l1_loss(pred_vector, target_vector, reduction='none').mean(dim=(1, 2, 3))
         
         if phase == 'train':

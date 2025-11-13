@@ -41,61 +41,70 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
     sampler = get_sampler(config, model)
     lpips_metric = MultispectralLPIPS(config)
     
-    metrics = {} # structure: {sample_id: {metric_name: value, ...}, ...}
-    for start_idx in trange(0, len(val_samples_gdf), batch_size, desc="Evaluating SR Model"):
-        end_idx = min(start_idx + batch_size, len(val_samples_gdf))
-        batch_samples = val_samples_gdf.iloc[start_idx:end_idx]
-        
-        input_tensors = []
-        target_tensors = []
-        profiles = []
-        filenames = []
-        for _, sample in batch_samples.iterrows():
-            input_path = data_dir_path / sample['input_path']
-            target_path = data_dir_path / sample['target_path']
-            
-            input_image = rio.open(input_path).read()  # [C, H, W]
-            target_image = rio.open(target_path).read()  # [C, H, W]
-            target_profile = rio.open(target_path).profile.copy()
-            profiles.append(target_profile) # Save profile for later use
-            
-            input_tensor = scale(torch.from_numpy(input_image).float(), in_range=(0, 10000), out_range=(-1.0, 1.0))
-            target_tensor = scale(torch.from_numpy(target_image).float(), in_range=(0, 10000), out_range=(-1.0, 1.0))
-            
-            input_tensors.append(input_tensor)
-            target_tensors.append(target_tensor)
-            filenames.append(Path(input_path).name)
-        
-        input_batch = torch.stack(input_tensors).to(device)
-        target_batch = torch.stack(target_tensors).to(device)
-        
-        output_batch = sampler.sample(input_batch)
-        
-        l1_loss = F.l1_loss(output_batch, target_batch, reduction='none').mean(dim=(1, 2, 3)) # per-sample L1 loss
-        psnr = TMF.image.peak_signal_noise_ratio(output_batch, target_batch, data_range=(-1, 1), reduction='none', dim=(1, 2, 3)) # per-sample PSNR
-        ssim = TMF.image.structural_similarity_index_measure(output_batch, target_batch, data_range=(-1, 1), reduction='none') # per-sample SSIM
-        mssim = TMF.image.multiscale_structural_similarity_index_measure(output_batch, target_batch, data_range=(-1, 1), reduction='none') # per-sample MS-SSIM
-        lpips = lpips_metric(output_batch, target_batch) # per-sample LPIPS
-        
-        output_batch = scale(output_batch.cpu(), in_range=(-1.0, 1.0), out_range=(0, 10000)).numpy()
-        for i in range(output_batch.shape[0]):
-            
-            sample = batch_samples.iloc[i]
-            sample_id = sample['id']
-            
-            metrics[sample_id] = {
-                'L1': l1_loss[i].item(),
-                'PSNR': psnr[i].item(),
-                'SSIM': ssim[i].item(),
-                'MS-SSIM': mssim[i].item(),
-                'LPIPS': lpips[i].item()
-            }
-            # Save output image
-            out_image = output_batch[i]
-            out_profile = profiles[i].copy()
-            with rio.open(image_out_path / filenames[i], 'w', **out_profile) as dst:
-                dst.write(out_image)
+    try:
+        metrics = {} # structure: {sample_id: {metric_name: value, ...}, ...}
+        with trange(0, len(val_samples_gdf), batch_size, desc="Evaluating SR Model") as pbar:
+            for start_idx in pbar:
+                end_idx = min(start_idx + batch_size, len(val_samples_gdf))
+                batch_samples = val_samples_gdf.iloc[start_idx:end_idx]
+                
+                input_tensors = []
+                target_tensors = []
+                profiles = []
+                filenames = []
+                for _, sample in batch_samples.iterrows():
+                    input_path = data_dir_path / sample['input_path']
+                    target_path = data_dir_path / sample['target_path']
+                    
+                    input_image = rio.open(input_path).read()  # [C, H, W]
+                    target_image = rio.open(target_path).read()  # [C, H, W]
+                    target_profile = rio.open(target_path).profile.copy()
+                    profiles.append(target_profile) # Save profile for later use
+                    
+                    input_tensor = scale(torch.from_numpy(input_image).float(), in_range=(0, 10000), out_range=(-1.0, 1.0))
+                    target_tensor = scale(torch.from_numpy(target_image).float(), in_range=(0, 10000), out_range=(-1.0, 1.0))
+                    
+                    input_tensors.append(input_tensor)
+                    target_tensors.append(target_tensor)
+                    filenames.append(Path(input_path).name)
+                
+                input_batch = torch.stack(input_tensors).to(device)
+                target_batch = torch.stack(target_tensors).to(device)
+                
+                output_batch = sampler.sample(input_batch)
+                
+                l1_loss = F.l1_loss(output_batch, target_batch, reduction='none').mean(dim=(1, 2, 3)) # per-sample L1 loss
+                psnr = TMF.image.peak_signal_noise_ratio(output_batch, target_batch, data_range=(-1, 1), reduction='none', dim=(1, 2, 3)) # per-sample PSNR
+                ssim = TMF.image.structural_similarity_index_measure(output_batch, target_batch, data_range=(-1, 1), reduction='none') # per-sample SSIM
+                mssim = TMF.image.multiscale_structural_similarity_index_measure(output_batch, target_batch, data_range=(-1, 1), reduction='none') # per-sample MS-SSIM
+                lpips = lpips_metric(output_batch, target_batch) # per-sample LPIPS
+                
+                output_batch = scale(output_batch.cpu(), in_range=(-1.0, 1.0), out_range=(0, 10000)).numpy()
+                for i in range(output_batch.shape[0]):
+                    
+                    sample = batch_samples.iloc[i]
+                    sample_id = sample['id']
+                    
+                    metrics[sample_id] = {
+                        'L1': l1_loss[i].item(),
+                        'PSNR': psnr[i].item(),
+                        'SSIM': ssim[i].item(),
+                        'MS-SSIM': mssim[i].item(),
+                        'LPIPS': lpips[i].item()
+                    }
+                    # Save output image
+                    out_image = output_batch[i]
+                    out_profile = profiles[i].copy()
+                    with rio.open(image_out_path / filenames[i], 'w', **out_profile) as dst:
+                        dst.write(out_image)
+                
+                pbar_metrics_df = pd.DataFrame.from_dict(metrics, orient='index')
+                pbar_metrics_df = pbar_metrics_df.mean().to_frame().T
+                pbar.set_postfix({col: f"{pbar_metrics_df[col].values[0]:.4f}" for col in pbar_metrics_df.columns})
     
+    except KeyboardInterrupt:
+        logger.warning("Evaluation interrupted by user. Saving results obtained so far...")
+            
     metrics_df = pd.DataFrame.from_dict(metrics, orient='index')
     metrics_df.index.name = 'sample_id'
     metrics_df.to_csv(out_path / 'sr_evaluation_metrics.csv')
