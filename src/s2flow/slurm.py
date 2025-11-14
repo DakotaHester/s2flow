@@ -76,7 +76,7 @@ class BaseJob(ABC):
         self.config_path = self.log_dir / "config.yaml"
         self.slurm_script_path = self.slurm_script_dir / f"{self.job_name}.slurm"
         self.log_file = self.log_dir / "slurm.out"
-        self.finished_file = self.log_dir / "finished.txt"
+        self.completed_file = self.log_dir / "COMPLETE"
     
     @abstractmethod
     def _update_config(self):
@@ -97,9 +97,9 @@ class BaseJob(ABC):
         """Get command to execute the job."""
         return ['s2flow', '--config', str(self.config_path)]
     
-    def is_finished(self) -> bool:
+    def is_completed(self) -> bool:
         """Check if job has already completed."""
-        return self.finished_file.exists()
+        return self.completed_file.exists()
     
     def create_directories(self):
         """Create necessary directories for this job."""
@@ -160,8 +160,8 @@ echo "===================================="
 
 {cmd}
 
-# Mark job as finished
-echo "$(date): Job completed successfully" > {self.finished_file}
+# Mark job as completed
+echo "$(date): Job completed successfully" > {self.completed_file}
 """
         return script
     
@@ -220,8 +220,8 @@ echo "$(date): Job completed successfully" > {self.finished_file}
             f.write(result.stderr)
         
         if result.returncode == 0:
-            # Mark as finished
-            with open(self.finished_file, 'w') as f:
+            # Mark as completed
+            with open(self.completed_file, 'w') as f:
                 f.write(f"{datetime.now()}: Job completed successfully\n")
             print(f"✓ Completed {self.job_name}")
             return True
@@ -306,7 +306,7 @@ class BaseSweep(ABC):
                   f"{queue_size} jobs in queue. Waiting for space...")
             time.sleep(60)
     
-    def run(self, skip_finished: bool = True, dry_run: bool = False):
+    def run(self, skip_completed: bool = True, dry_run: bool = False):
         """Execute the parameter sweep."""
         self.generate_jobs()
         
@@ -315,14 +315,14 @@ class BaseSweep(ABC):
             print(f"DRY RUN: Would submit {len(self.jobs)} jobs")
             print(f"{'='*50}")
             for job in self.jobs:
-                status = "(skip: finished)" if job.is_finished() else ""
+                status = "(skip: completed)" if job.is_completed() else ""
                 print(f"  - {job.job_name} {status}")
             return
         
         for job in self.jobs:
-            # Skip if already finished
-            if skip_finished and job.is_finished():
-                print(f"⊘ Skipping {job.job_name} (already finished)")
+            # Skip if already completed
+            if skip_completed and job.is_completed():
+                print(f"⊘ Skipping {job.job_name} (already completed)")
                 continue
             
             success = False

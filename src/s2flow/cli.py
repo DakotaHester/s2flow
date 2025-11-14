@@ -91,6 +91,11 @@ def main():
             f"Unknown job type: {job_type}. Must be one of 'sr_train'," + \
             "'sr_eval', 'sr_inference', 'lc_train', 'lc_eval', 'lc_inference'."
         )
+    
+    if config.get('job', {}).get('add_completed_file', True):
+        completed_file_path = out_path / 'COMPLETE'
+        completed_file_path.touch()
+        logger.info(f"Created completed file at {completed_file_path}")
 
 
 def train_sr_model(config: Dict[str, Any], logger: logging.Logger):
