@@ -23,7 +23,7 @@ data:
   data_dir_path: ./data/s2flow-s2naip
   
 hyperparameters:
-  micro_batch_size: 128 # set to 1024 for PCA computation
+  micro_batch_size: 32 # set to 1024 for PCA computation
 
 metrics:
   pca_lpips_clamp: True

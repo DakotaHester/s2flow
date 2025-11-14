@@ -76,8 +76,8 @@ class SREvalSweep(BaseSweep):
     
     def generate_jobs(self):
         """Generate all SR evaluation jobs."""
-        for solver in self.solvers:
-            for num_steps in self.num_steps_list:
+        for num_steps in self.num_steps_list:
+            for solver in self.solvers:
                 job = SREvalJob(
                     base_config=self.base_config,
                     job_params={

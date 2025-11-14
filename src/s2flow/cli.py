@@ -6,7 +6,7 @@ import yaml
 import logging
 import torch
 from .data.datasets import get_dataloaders
-from .utils import init_logging
+from .utils import init_logging, get_device
 
 torch.manual_seed(1701)
 torch.cuda.manual_seed_all(1701)
@@ -63,6 +63,7 @@ def main():
         'out_path': out_path
     }
     logger = init_logging(config, verbose=args.verbose)
+    logger.info(f'Device: {get_device()}')
     
     job_type = config.get("job", {}).get("type", None)
     if job_type is None:
