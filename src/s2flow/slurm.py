@@ -355,10 +355,10 @@ class BaseSweep(ABC):
                 
                 if response in ('y', 'yes'):
                     self._cancel_all_jobs()
-                    break
+                    exit(0)
                 elif response in ('n', 'no'):
                     print("Jobs will continue running.")
-                    break
+                    exit(0)
                 else:
                     print("Invalid input. Please enter 'y', 'yes', 'n', or 'no' (or press Enter for no).")
             except (EOFError, KeyboardInterrupt):
