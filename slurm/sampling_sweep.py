@@ -40,7 +40,7 @@ class SREvalJob(BaseJob):
     
     def _get_command(self) -> List[str]:
         """Get s2flow command."""
-        return ['s2flow', '--config', str(self.config_path)]
+        return ['s2flow', '--config', str(self.config_path), '--verbose']
 
 
 class SREvalSweep(BaseSweep):
@@ -57,7 +57,7 @@ class SREvalSweep(BaseSweep):
     ):
         super().__init__(
             base_config_path=base_config_path,
-            sweep_name="s2flow_sr_eval_sweep",
+            sweep_name="s2flow_sr_sampling_sweep",
             timestamp=timestamp,
             slurm_config=slurm_config,
             hostname_check=hostname_check,
