@@ -40,7 +40,7 @@ class SREvalJob(BaseJob):
     
     def _get_command(self) -> List[str]:
         """Get s2flow command."""
-        return ['s2flow', '--config', str(self.config_path), '--verbose']
+        return ['s2flow', '--config', str(self.config_path)]
 
 
 class SREvalSweep(BaseSweep):

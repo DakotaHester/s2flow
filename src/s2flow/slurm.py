@@ -6,8 +6,9 @@ import os
 import subprocess
 import time
 import socket
+import signal
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 from datetime import datetime
 from abc import ABC, abstractmethod, ABCMeta
 import yaml
@@ -62,6 +63,9 @@ class BaseJob(ABC):
         self.base_log_dir = base_log_dir
         self.base_out_dir = base_out_dir
         self.slurm_script_dir = slurm_script_dir
+        
+        # Job ID tracking
+        self.slurm_job_id: Optional[str] = None
         
         # Apply job parameters to config
         self._update_config()
@@ -188,7 +192,13 @@ echo "$(date): Job completed successfully" > {self.completed_file}
             text=True
         )
         if result.returncode == 0:
-            print(f"✓ Submitted {self.job_name} (log: {self.log_file})")
+            # Extract job ID from output (format: "Submitted batch job 12345")
+            try:
+                self.slurm_job_id = result.stdout.strip().split()[-1]
+            except (IndexError, ValueError):
+                self.slurm_job_id = None
+            
+            print(f"✓ Submitted {self.job_name} (job_id: {self.slurm_job_id}, log: {self.log_file})")
             return True
         else:
             print(f"✗ Failed to submit {self.job_name}: {result.stderr}")
@@ -240,6 +250,7 @@ class BaseSweep(ABC):
         timestamp: Optional[str] = None,
         slurm_config: Optional[SlurmConfig] = None,
         hostname_check: Optional[str] = None,
+        sleep_interval: int = 10,
     ):
         # Load base configuration
         with open(base_config_path, 'r') as f:
@@ -267,6 +278,7 @@ class BaseSweep(ABC):
         self.base_log_dir = Path(f"./logs/{sweep_name}/{timestamp}")
         self.base_out_dir = Path(f"./runs/{sweep_name}/{timestamp}")
         self.slurm_script_dir = Path(f"./slurm_scripts/{sweep_name}/{timestamp}")
+        self.sleep_interval = sleep_interval
         
         # SLURM configuration
         self.slurm_config = slurm_config or SlurmConfig()
@@ -275,6 +287,11 @@ class BaseSweep(ABC):
         self.jobs: List[BaseJob] = []
         self.submitted_count = 0
         self.failed_count = 0
+        self.submitted_job_ids: Set[str] = set()
+        
+        # Interrupt handling
+        self._interrupted = False
+        self._original_sigint_handler = signal.getsignal(signal.SIGINT)
     
     @abstractmethod
     def generate_jobs(self):
@@ -302,48 +319,144 @@ class BaseSweep(ABC):
             queue_size = self.get_queue_size()
             if queue_size < self.slurm_config.max_jobs:
                 break
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
-                  f"{queue_size} jobs in queue. Waiting for space...")
-            time.sleep(60)
+            # print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
+                #   f"{queue_size} jobs in queue. Waiting for space...")
+            time.sleep(self.sleep_interval)
+    
+    def _handle_interrupt(self, signum, frame):
+        """Handle Ctrl-C interrupt."""
+        if self._interrupted:
+            # Second interrupt - force exit
+            print("\n\nForce quit requested. Exiting immediately.")
+            signal.signal(signal.SIGINT, self._original_sigint_handler)
+            raise KeyboardInterrupt
+        
+        self._interrupted = True
+        print("\n\nInterrupt received. Sweep submission halted.")
+        
+        if self.is_slurm and self.submitted_job_ids:
+            self._prompt_cancel_jobs()
+        else:
+            print("No SLURM jobs to cancel.")
+    
+    def _prompt_cancel_jobs(self):
+        """Prompt user to cancel submitted jobs."""
+        print(f"\n{len(self.submitted_job_ids)} job(s) have been submitted to SLURM:")
+        for job_id in sorted(self.submitted_job_ids):
+            print(f"  - Job ID: {job_id}")
+        
+        while True:
+            try:
+                response = input("\nCancel all submitted jobs? [y/N]: ").strip().lower()
+                
+                # Default to 'no' on empty input
+                if not response:
+                    response = 'n'
+                
+                if response in ('y', 'yes'):
+                    self._cancel_all_jobs()
+                    break
+                elif response in ('n', 'no'):
+                    print("Jobs will continue running.")
+                    break
+                else:
+                    print("Invalid input. Please enter 'y', 'yes', 'n', or 'no' (or press Enter for no).")
+            except (EOFError, KeyboardInterrupt):
+                # Handle Ctrl-C or Ctrl-D during prompt
+                print("\n\nCancellation prompt interrupted. Jobs will continue running.")
+                break
+    
+    def _cancel_all_jobs(self):
+        """Cancel all submitted SLURM jobs."""
+        print(f"\nCancelling {len(self.submitted_job_ids)} job(s)...")
+        
+        success_count = 0
+        fail_count = 0
+        
+        for job_id in self.submitted_job_ids:
+            try:
+                result = subprocess.run(
+                    ['scancel', job_id],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                
+                if result.returncode == 0:
+                    print(f"  ✓ Cancelled job {job_id}")
+                    success_count += 1
+                else:
+                    print(f"  ✗ Failed to cancel job {job_id}: {result.stderr.strip()}")
+                    fail_count += 1
+            except subprocess.TimeoutExpired:
+                print(f"  ✗ Timeout cancelling job {job_id}")
+                fail_count += 1
+            except Exception as e:
+                print(f"  ✗ Error cancelling job {job_id}: {e}")
+                fail_count += 1
+        
+        print(f"\nCancellation summary: {success_count} successful, {fail_count} failed")
     
     def run(self, skip_completed: bool = True, dry_run: bool = False):
         """Execute the parameter sweep."""
-        self.generate_jobs()
+        # Set up interrupt handler
+        signal.signal(signal.SIGINT, self._handle_interrupt)
         
-        if dry_run:
-            print(f"\n{'='*50}")
-            print(f"DRY RUN: Would submit {len(self.jobs)} jobs")
-            print(f"{'='*50}")
+        try:
+            self.generate_jobs()
+            
+            if dry_run:
+                print(f"\n{'='*50}")
+                print(f"DRY RUN: Would submit {len(self.jobs)} jobs")
+                print(f"{'='*50}")
+                for job in self.jobs:
+                    status = "(skip: completed)" if job.is_completed() else ""
+                    print(f"  - {job.job_name} {status}")
+                return
+            
             for job in self.jobs:
-                status = "(skip: completed)" if job.is_completed() else ""
-                print(f"  - {job.job_name} {status}")
-            return
-        
-        for job in self.jobs:
-            # Skip if already completed
-            if skip_completed and job.is_completed():
-                print(f"⊘ Skipping {job.job_name} (already completed)")
-                continue
-            
-            success = False
-            if self.is_slurm:
-                # Wait for queue space
-                self.wait_for_queue_space()
+                # Check if interrupted
+                if self._interrupted:
+                    print("\nSweep submission halted. No more jobs will be submitted.")
+                    break
                 
-                # Submit to SLURM
-                success = job.submit_slurm(self.slurm_config)
-                time.sleep(1)  # Slight delay to avoid race conditions
-            else:
-                # Run directly
-                success = job.run_direct()
-            
-            if success:
-                self.submitted_count += 1
-            else:
-                self.failed_count += 1
+                # Skip if already completed
+                if skip_completed and job.is_completed():
+                    print(f"⊘ Skipping {job.job_name} (already completed)")
+                    continue
+                
+                success = False
+                if self.is_slurm:
+                    # Wait for queue space
+                    self.wait_for_queue_space()
+                    
+                    # Submit to SLURM
+                    success = job.submit_slurm(self.slurm_config)
+                    
+                    # Track submitted job ID
+                    if success and job.slurm_job_id:
+                        self.submitted_job_ids.add(job.slurm_job_id)
+                    
+                    time.sleep(1)  # Slight delay to avoid race conditions
+                else:
+                    # Run directly
+                    success = job.run_direct()
+                
+                if success:
+                    self.submitted_count += 1
+                else:
+                    self.failed_count += 1
         
-        # Print summary
-        self._print_summary()
+        except Exception as e:
+            print(f"\nUnexpected error during sweep: {e}")
+            raise
+        
+        finally:
+            # Restore original signal handler
+            signal.signal(signal.SIGINT, self._original_sigint_handler)
+            
+            # Print summary
+            self._print_summary()
     
     def _print_summary(self):
         """Print execution summary."""
@@ -354,6 +467,11 @@ class BaseSweep(ABC):
         print(f"Successfully {mode}: {self.submitted_count}")
         if self.failed_count > 0:
             print(f"Failed: {self.failed_count}")
+        if self._interrupted:
+            print(f"Status: INTERRUPTED")
+            remaining = len(self.jobs) - self.submitted_count - self.failed_count
+            if remaining > 0:
+                print(f"Not submitted: {remaining}")
         print(f"Base log directory: {self.base_log_dir}")
         print(f"Base output directory: {self.base_out_dir}")
         print(f"{'='*50}")
