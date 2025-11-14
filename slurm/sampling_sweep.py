@@ -11,7 +11,7 @@ def main() -> None:
         num_steps_range=(1, 100, 5),
         slurm_config=slurm_config,
     )
-    sweep.run(dry_run=True)
+    sweep.run()
         
         
 
