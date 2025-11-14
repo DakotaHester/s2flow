@@ -25,7 +25,7 @@ class SREvalJob(BaseJob):
             self.base_config['sampling'] = {}
         self.base_config['sampling']['solver'] = self.job_params['solver']
         self.base_config['sampling']['num_steps'] = self.job_params['num_steps']
-    
+            
     def _generate_job_name(self) -> str:
         """Generate job name from parameters."""
         solver = self.job_params['solver']

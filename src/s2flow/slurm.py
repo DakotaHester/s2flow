@@ -264,9 +264,9 @@ class BaseSweep(ABC):
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         self.timestamp = timestamp
-        self.base_log_dir = Path(f"./logs/{sweep_name}_{timestamp}")
-        self.base_out_dir = Path(f"./runs/{sweep_name}_{timestamp}")
-        self.slurm_script_dir = Path(f"./slurm_scripts/{sweep_name}_{timestamp}")
+        self.base_log_dir = Path(f"./logs/{sweep_name}/{timestamp}")
+        self.base_out_dir = Path(f"./runs/{sweep_name}/{timestamp}")
+        self.slurm_script_dir = Path(f"./slurm_scripts/{sweep_name}/{timestamp}")
         
         # SLURM configuration
         self.slurm_config = slurm_config or SlurmConfig()

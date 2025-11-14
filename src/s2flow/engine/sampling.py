@@ -29,7 +29,12 @@ class BaseSampler(ABC):
         
         self.num_timesteps = config.get('sampling', {}).get('num_steps', 50)
         self.timesteps = torch.linspace(0, 1, self.num_timesteps, device=self.device)
-        self.step_size = self.timesteps[1] - self.timesteps[0]
+        if self.num_timesteps > 1:
+            self.step_size = self.timesteps[1] - self.timesteps[0]
+        elif self.num_timesteps == 1:
+            self.step_size = 1.0
+        else:
+            raise ValueError("num_steps must be at least 1.")
     
     @abstractmethod
     @torch.no_grad()
