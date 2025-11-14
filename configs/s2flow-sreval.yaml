@@ -16,7 +16,7 @@ sr_model:
   layers_per_block: 2
   norm_num_groups: 32
   time_embedding_type: positional
-  pretrained_weights: 'runs/s2flow_sr_train_20251113/model.pt'
+  pretrained_weights: 'runs/s2flow_sr_train/model.pt'
 
 data:
   samples_par_path: ./data/s2flow-s2naip/samples.par
@@ -33,5 +33,5 @@ metrics:
   pca_lpips_k: 3.0
 
 sampling:
-  num_steps: 100
-  solver: euler
+  num_steps: 50
+  solver: heun

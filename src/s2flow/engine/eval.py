@@ -1,3 +1,4 @@
+import json
 from typing import Any, Dict
 import torch.nn as nn
 import torch
@@ -9,6 +10,7 @@ import pandas as pd
 from tqdm import trange
 from logging import getLogger
 from pathlib import Path
+from time import time
 
 from ..utils import get_device
 from ..metrics import MultispectralLPIPS
@@ -40,6 +42,8 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
     device = get_device()
     sampler = get_sampler(config, model)
     lpips_metric = MultispectralLPIPS(config)
+    gpu_time = 0.0
+    total_start_time = time()
     
     try:
         metrics = {} # structure: {sample_id: {metric_name: value, ...}, ...}
@@ -71,7 +75,10 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
                 input_batch = torch.stack(input_tensors).to(device)
                 target_batch = torch.stack(target_tensors).to(device)
                 
+                gpu_start_time = time()
                 output_batch = sampler.sample(input_batch)
+                gpu_stop_time = time()
+                gpu_time += (gpu_stop_time - gpu_start_time)
                 
                 l1_loss = F.l1_loss(output_batch, target_batch, reduction='none').mean(dim=(1, 2, 3)) # per-sample L1 loss
                 psnr = TMF.image.peak_signal_noise_ratio(output_batch, target_batch, data_range=(-1, 1), reduction='none', dim=(1, 2, 3)) # per-sample PSNR
@@ -117,6 +124,19 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
     logger.info(f"Saved summary SR evaluation statistics to {out_path / 'sr_evaluation_summary_stats.csv'}")
     
     logger.info('Mean SR Evaluation Metrics:' + f"\n{summary_stats['mean']}")
+    
+    total_end_time = time()
+    total_time = total_end_time - total_start_time
+    logger.info(f"Total evaluation time: {total_time:.2f} seconds")
+    logger.info(f"Total GPU sampling time: {gpu_time:.2f} seconds")
+    
+    times_dict = {
+        'total_time_seconds': total_time,
+        'gpu_sampling_time_seconds': gpu_time
+    }
+    with open(out_path / 'sr_evaluation_times.json', 'w') as f:
+        json.dump(times_dict, f, indent=4)
+    logger.info(f"Saved evaluation timing information to {out_path / 'sr_evaluation_times.json'}")
     # raise NotImplementedError("Super-resolution model evaluation is not yet implemented.")
 
 

@@ -5,12 +5,15 @@ from torch.amp import autocast
 from tqdm import tqdm
 from logging import getLogger
 from contextlib import nullcontext
+from abc import ABC, abstractmethod, ABCMeta
 
 from ..utils import get_hp_dtype, get_device
 logger = getLogger(__name__)
 
-class BaseSampler:
+class BaseSampler(ABC):
     def __init__(self, config: Dict[str, Any], model: nn.Module) -> None:
+        __metaclass__ = ABCMeta
+        
         self.model = model
         self.device = get_device()
         self.model.to(self.device)
@@ -28,9 +31,10 @@ class BaseSampler:
         self.timesteps = torch.linspace(0, 1, self.num_timesteps, device=self.device)
         self.step_size = self.timesteps[1] - self.timesteps[0]
     
+    @abstractmethod
     @torch.no_grad()
     def sample(self, cond: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError("Sampler must implement the sample method.")
+        pass
 
 
 class EulerSampler(BaseSampler):
@@ -43,7 +47,7 @@ class EulerSampler(BaseSampler):
             
             model_input = torch.cat((x, cond), dim=1)
             with self.autocast_context:
-                v = self.model(model_input, t_batch)
+                v = self.model(model_input, t_batch * 1000)
             
             x = x + v * self.step_size
         
@@ -62,13 +66,13 @@ class HeunSampler(BaseSampler):
             # Predictor step
             model_input = torch.cat((x, cond), dim=1)
             with self.autocast_context:
-                v1 = self.model(model_input, t_batch)
+                v1 = self.model(model_input, t_batch * 1000)
             x_pred = x + v1 * self.step_size
             
             # Corrector step
             model_input_pred = torch.cat((x_pred, cond), dim=1)
             with self.autocast_context:
-                v2 = self.model(model_input_pred, t_next_batch)
+                v2 = self.model(model_input_pred, t_next_batch * 1000)
             
             x = x + (self.step_size / 2) * (v1 + v2)
         
@@ -87,13 +91,13 @@ class MidpointSampler(BaseSampler):
             # Compute velocity at the start of the step
             model_input = torch.cat((x, cond), dim=1)
             with self.autocast_context:
-                v1 = self.model(model_input, t_batch)
+                v1 = self.model(model_input, t_batch * 1000)
             
             # Estimate midpoint
             x_mid = x + v1 * (self.step_size / 2)
             model_input_mid = torch.cat((x_mid, cond), dim=1)
             with self.autocast_context:
-                v2 = self.model(model_input_mid, t_mid_batch)
+                v2 = self.model(model_input_mid, t_mid_batch * 1000)
             
             x = x + v2 * self.step_size
         
@@ -113,25 +117,25 @@ class RK4Sampler(BaseSampler):
             # k1: velocity at start of the step
             model_input_k1 = torch.cat((x, cond), dim=1)
             with self.autocast_context:
-                v_k1 = self.model(model_input_k1, t_batch)
+                v_k1 = self.model(model_input_k1, t_batch * 1000)
             
             # k2: velocity at midpoint
             x_k2 = x + v_k1 * (self.step_size / 2)
             model_input_k2 = torch.cat((x_k2, cond), dim=1)
             with self.autocast_context:
-                v_k2 = self.model(model_input_k2, t_mid_batch)
+                v_k2 = self.model(model_input_k2, t_mid_batch * 1000)
             
             # k3: velocity at midpoint (estimated with k2)
             x_k3 = x + v_k2 * (self.step_size / 2)
             model_input_k3 = torch.cat((x_k3, cond), dim=1)
             with self.autocast_context:
-                v_k3 = self.model(model_input_k3, t_mid_batch)
+                v_k3 = self.model(model_input_k3, t_mid_batch * 1000)
                 
             # k4: velocity at the end of the step
             x_k4 = x + v_k3 * self.step_size
             model_input_k4 = torch.cat((x_k4, cond), dim=1)
             with self.autocast_context:
-                v_k4 = self.model(model_input_k4, t_next_batch)
+                v_k4 = self.model(model_input_k4, t_next_batch * 1000)
             
             x = x + (self.step_size / 6) * (v_k1 + 2*v_k2 + 2*v_k3 + v_k4)
         

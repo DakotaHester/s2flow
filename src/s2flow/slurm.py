@@ -9,7 +9,7 @@ import socket
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from abc import ABC, abstractmethod
+from abc import ABC, abstractmethod, ABCMeta
 import yaml
 
 
