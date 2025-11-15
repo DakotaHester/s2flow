@@ -42,6 +42,36 @@ class BaseSampler(ABC):
         pass
 
 
+class BaseSampler(ABC):
+    def __init__(self, config: Dict[str, Any], model: nn.Module) -> None:
+        __metaclass__ = ABCMeta
+        
+        self.model = model
+        self.device = get_device()
+        self.model.to(self.device)
+        
+        self.use_amp = config.get('hyperparameters', None).get('use_amp', True)
+        if self.use_amp:
+            hp_dtype = get_hp_dtype()
+            logger.debug(f"Using AMP with dtype: {hp_dtype}")
+            self.autocast_context = autocast(device_type=self.device.type, dtype=hp_dtype, enabled=True)
+        else:
+            logger.debug("AMP disabled; using full precision (float32).")
+            self.autocast_context = nullcontext()
+        
+        self.num_timesteps = config.get('sampling', {}).get('num_steps', 50)
+        if self.num_timesteps > 0:
+            self.step_size = 1 / self.num_timesteps
+            self.timesteps = torch.linspace(0, 1 - self.step_size, self.num_timesteps, device=self.device)
+        else:
+            raise ValueError(f"num_timesteps must be at least 1, got {self.num_timesteps}.")
+    
+    @abstractmethod
+    @torch.no_grad()
+    def sample(self, cond: torch.Tensor) -> torch.Tensor:
+        pass
+
+
 class EulerSampler(BaseSampler):
     @torch.no_grad()
     def sample(self, cond: torch.Tensor) -> torch.Tensor:
@@ -91,7 +121,7 @@ class MidpointSampler(BaseSampler):
         x = torch.randn(cond.size(), device=self.device)
         for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step"):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
-            t_mid_batch = torch.ones(cond.shape[0], device=self.device) * (t + self.step_size / 2)
+            t_mid_batch = torch.ones(cond.shape[0], device=self.device) * (t + (self.step_size / 2))
             
             # Compute velocity at the start of the step
             model_input = torch.cat((x, cond), dim=1)
@@ -116,7 +146,7 @@ class RK4Sampler(BaseSampler):
         x = torch.randn(cond.size(), device=self.device)
         for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step"):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
-            t_mid_batch = torch.ones(cond.shape[0], device=self.device) * ((t + self.step_size) / 2)
+            t_mid_batch = torch.ones(cond.shape[0], device=self.device) * (t + (self.step_size / 2))
             t_next_batch = torch.ones(cond.shape[0], device=self.device) * (t + self.step_size)
             
             # k1: velocity at start of the step
