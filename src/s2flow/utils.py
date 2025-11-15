@@ -63,11 +63,11 @@ def get_device() -> torch.device:
         logger.debug(f'Using CUDA device: {device}')
         return device
     elif torch.backends.mps.is_available():
-        device = torch.device("cuda")
+        device = torch.device("mps")
         logger.debug(f'Using MPS device: {device}')
         return device
     else:
-        device = torch.device("cuda")
+        device = torch.device("cpu")
         logger.debug(f'Using CPU device: {device}')
         return device
 
