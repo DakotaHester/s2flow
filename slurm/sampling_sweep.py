@@ -73,6 +73,7 @@ class SREvalSweep(BaseSweep):
             self.num_steps_list += list(range(max(5, start), stop + 1, step))
         else:
             self.num_steps_list = list(range(start, stop + 1, step))
+        self.num_steps_list.reverse() # Start with largest num_steps
     
     def generate_jobs(self):
         """Generate all SR evaluation jobs."""
