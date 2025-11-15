@@ -42,6 +42,7 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
     device = get_device()
     sampler = get_sampler(config, model)
     lpips_metric = MultispectralLPIPS(config)
+    save_eval_samples = config.get('eval', {}).get('save_eval_samples', True)
     gpu_time = 0.0
     total_start_time = time()
     
@@ -100,10 +101,11 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
                         'LPIPS': lpips[i].item()
                     }
                     # Save output image
-                    out_image = output_batch[i]
-                    out_profile = profiles[i].copy()
-                    with rio.open(image_out_path / filenames[i], 'w', **out_profile) as dst:
-                        dst.write(out_image)
+                    if save_eval_samples:
+                        out_image = output_batch[i]
+                        out_profile = profiles[i].copy()
+                        with rio.open(image_out_path / filenames[i], 'w', **out_profile) as dst:
+                            dst.write(out_image)
                 
                 pbar_metrics_df = pd.DataFrame.from_dict(metrics, orient='index')
                 pbar_metrics_df = pbar_metrics_df.mean().to_frame().T

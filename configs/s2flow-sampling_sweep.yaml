@@ -29,3 +29,6 @@ hyperparameters:
 metrics:
   pca_lpips_clamp: True
   pca_lpips_k: 3.0
+
+eval:
+  save_eval_samples: False
