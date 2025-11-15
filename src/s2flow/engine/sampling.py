@@ -59,10 +59,10 @@ class BaseSampler(ABC):
             logger.debug("AMP disabled; using full precision (float32).")
             self.autocast_context = nullcontext()
         
-        self.num_timesteps = config.get('sampling', {}).get('num_steps', 50)
+        self.num_timesteps = config.get('sampling', {}).get('num_steps', 50.0)
         if self.num_timesteps > 0:
             self.step_size = 1 / self.num_timesteps
-            self.timesteps = torch.linspace(0, 1 - self.step_size, self.num_timesteps, device=self.device)
+            self.timesteps = torch.linspace(0.0, 1 - self.step_size, self.num_timesteps, device=self.device)
         else:
             raise ValueError(f"num_timesteps must be at least 1, got {self.num_timesteps}.")
     

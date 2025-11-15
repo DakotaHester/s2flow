@@ -47,7 +47,7 @@ def main():
     if job_name is None:
         raise ValueError("Job name must be specified in the config under 'job.name'")
     
-    log_path = Path(config.get('job', {}).get('logging', {}).get('log_dir', './logs'))
+    log_path = Path(config.get('job', {}).get('log_dir', './logs'))
     log_path = log_path / job_name
     log_path.mkdir(parents=True, exist_ok=True)
     
