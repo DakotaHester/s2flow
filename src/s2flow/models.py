@@ -65,6 +65,19 @@ def get_sr_model(config: Dict[str, Any]) -> nn.Module:
     if model_config.get('compile_model', False):
         if os.getenv('HOSTNAME', 'gcer-a100') != 'gcer-a100':
             logger.info("Compiling model with torch.compile()...")
+            # need to set the following things for TF32 to work properly
+            # Check if TF32 is available (requires Ampere or newer, compute capability >= 8.0)
+            if device.type == 'cuda':
+                compute_cap = torch.cuda.get_device_capability(device=device)
+                if compute_cap[0] >= 8:  # Ampere (A100, A10, etc.) or newer
+                    logger.info(f"TF32 available (compute capability {compute_cap[0]}.{compute_cap[1]}). Enabling TF32 precision...")
+                    torch.set_float32_matmul_precision('high')
+                    torch.backends.cudnn.conv.fp32_precision = 'tf32'
+                    torch.backends.cuda.matmul.fp32_precision = 'tf32'
+                else:
+                    logger.info(f"TF32 not available (compute capability {compute_cap[0]}.{compute_cap[1]} < 8.0). Using default precision.")
+                    
+            torch.backends.cuda.matmul.fp32_precision = 'tf32'
             model.compile()
             logger.info("Model compiled successfully.")
         else:
