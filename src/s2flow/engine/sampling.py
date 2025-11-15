@@ -76,7 +76,7 @@ class EulerSampler(BaseSampler):
     @torch.no_grad()
     def sample(self, cond: torch.Tensor) -> torch.Tensor:
         
-        x = torch.randn(cond.size(), device=self.device)
+        x = torch.randn_like(cond, device=self.device)
         for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step"):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
             
@@ -93,7 +93,7 @@ class HeunSampler(BaseSampler):
     @torch.no_grad()
     def sample(self, cond: torch.Tensor) -> torch.Tensor:
 
-        x = torch.randn(cond.size(), device=self.device)
+        x = torch.randn_like(cond, device=self.device)
         for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step"):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
             t_next_batch = torch.ones(cond.shape[0], device=self.device) * (t + self.step_size)
@@ -118,7 +118,7 @@ class MidpointSampler(BaseSampler):
     @torch.no_grad()
     def sample(self, cond: torch.Tensor) -> torch.Tensor:
 
-        x = torch.randn(cond.size(), device=self.device)
+        x = torch.randn_like(cond, device=self.device) 
         for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step"):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
             t_mid_batch = torch.ones(cond.shape[0], device=self.device) * (t + (self.step_size / 2))
@@ -143,7 +143,7 @@ class RK4Sampler(BaseSampler):
     @torch.no_grad()
     def sample(self, cond: torch.Tensor) -> torch.Tensor:
 
-        x = torch.randn(cond.size(), device=self.device)
+        x = torch.randn_like(cond, device=self.device)
         for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step"):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
             t_mid_batch = torch.ones(cond.shape[0], device=self.device) * (t + (self.step_size / 2))
