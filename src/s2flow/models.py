@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import torch
 import torch.nn as nn
@@ -60,6 +61,14 @@ def get_sr_model(config: Dict[str, Any]) -> nn.Module:
     device = get_device()
     model.to(device)
     logger.debug(f"Model moved to device: {device}")
+    
+    if model_config.get('compile_model', False):
+        if os.getenv('HOSTNAME', 'gcer-a100') != 'gcer-a100':
+            logger.info("Compiling model with torch.compile()...")
+            model.compile()
+            logger.info("Model compiled successfully.")
+        else:
+            logger.warning("Model compilation is NOT supported on 'gcer-a100' hostname. Skipping compilation.")
     
     model_complexity_dict = get_model_complexity(
         model, 

@@ -17,6 +17,7 @@ sr_model:
   norm_num_groups: 32
   time_embedding_type: positional
   pretrained_weights: 'runs/s2flow_sr_train/model.pt'
+  compile_model: True # will be set to False if on host gcer-a100 
 
 data:
   samples_par_path: ./data/s2flow-s2naip/samples.par
