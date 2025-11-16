@@ -9,7 +9,7 @@ from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 import torchmetrics.functional as TMF
 from tqdm import tqdm
-from ..metrics import MultispectralLPIPS
+from ..metrics import MultispectralLPIPS # , MultispectralDISTS
 from ..utils import get_device, get_hp_dtype
 
 logger = logging.getLogger(__name__)
@@ -80,12 +80,13 @@ class FlowMatchingSRTrainer:
             self.scaler = None
         
         self.lpips_metric = MultispectralLPIPS(config)
+        # self.dists_metric = MultispectralDISTS(config)
         
         self.metrics = {
             'epoch': [],
             'lr': [],
         }
-        self.metric_names = ['l1_loss', 'psnr', 'ssim', 'mssim', 'lpips']
+        self.metric_names = ['l1_loss', 'psnr', 'ssim', 'mssim', 'lpips'] # not using 'dists' for training
         for phase in ('train', 'val'):
             for metric in self.metric_names:
                 self.metrics[f'{phase}_{metric}'] = []
@@ -215,6 +216,7 @@ class FlowMatchingSRTrainer:
             f'{phase}_ssim': TMF.image.structural_similarity_index_measure(pred_image, target_img, data_range=(-1, 1), reduction='none').sum().item(),
             f'{phase}_mssim': TMF.image.multiscale_structural_similarity_index_measure(pred_image, target_img, data_range=(-1, 1), reduction='none').sum().item(),
             f'{phase}_lpips': self.lpips_metric(pred_image, target_img).sum().item(),
+            f'{phase}_dists': self.dists_metric(pred_image, target_img).sum().item(),
         }
     
 

@@ -1,27 +1,27 @@
 from typing import Any, Dict, Optional
 from torchmetrics import functional as F
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
+from torchmetrics.functional.image.dists import DISTSNetwork
 import logging
 import torch
 from .data.pca import PCAConvLayer
 from .utils import get_device, get_hp_dtype
 from torch.amp import autocast
 from contextlib import nullcontext
+from abc import ABC, abstractmethod, ABCMeta
 
 logger = logging.getLogger(__name__)
 
 
-class MultispectralLPIPS:
-    '''
-    Apply PCA to multispectral images and then compute LPIPS on the reduced components.
-    '''
+class BaseMultispectralMetric(ABC):
+    
     def __init__(self, config: Dict[str, Any]) -> None:
+        __metaclass__ = ABCMeta
         
         self.device = get_device()
         self.pca_layer = PCAConvLayer(config).to(self.device)
         self.clamp = config.get('metrics', {}).get('pca_lpips_clamp', False)
         self.k = config.get('metrics', {}).get('pca_lpips_k', 1.0)
-        self.tv_metric = LearnedPerceptualImagePatchSimilarity(reduction='none').to(self.device)
         
         self.use_amp = config.get('hyperparameters', None).get('use_amp', True)
         if self.use_amp:
@@ -31,17 +31,101 @@ class MultispectralLPIPS:
         else:
             logger.debug("AMP disabled; using full precision (float32).")
             self.autocast_context = nullcontext()
-
+    
+    @abstractmethod
     @torch.no_grad()
-    def __call__(self, pred_img: torch.Tensor, naip_img: torch.Tensor) -> torch.Tensor:
+    def __call__(self, pred_img: torch.Tensor, target_img: torch.Tensor) -> torch.Tensor:
+        pass
+
+
+class MultispectralLPIPS(BaseMultispectralMetric):
+    '''Apply PCA to multispectral images and then compute LPIPS on the reduced components.'''
+    
+    def __init__(self, config: Dict[str, Any]) -> None:
+        super().__init__(config)
+        self.tv_metric = LearnedPerceptualImagePatchSimilarity(reduction='none').to(self.device)
+    
+    @torch.no_grad()
+    def __call__(self, pred_img: torch.Tensor, target_img: torch.Tensor) -> torch.Tensor:
         """
-        pred_img, naip_img: (B,4,H,W) multispectral images
+        pred_img, target_img: (B,4,H,W) multispectral images
         Returns: LPIPS computed on PCA-reduced images.
         """
         with self.autocast_context:
             pred_pca = self.pca_layer(pred_img, k=self.k, clamp=self.clamp)  # B,3,H,W
-            naip_pca = self.pca_layer(naip_img, k=self.k, clamp=self.clamp)  # B,3,H,W
+            naip_pca = self.pca_layer(target_img, k=self.k, clamp=self.clamp)  # B,3,H,W
             
             lpips = self.tv_metric(pred_pca, naip_pca)
         self.tv_metric.reset()
         return lpips  # B, tensor
+
+
+class SampleWiseDISTSNetwork(DISTSNetwork):
+    '''DISTSNetwork that returns per-sample scores for a batch.'''
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        B = x.size(0)
+
+        feats0 = self.forward_once(x)
+        feats1 = self.forward_once(y)
+
+        dist1 = torch.zeros(B, 1, device=x.device)
+        dist2 = torch.zeros(B, 1, device=x.device)
+
+        c1 = 1e-6
+        c2 = 1e-6
+
+        # --- normalize weights ---
+        w_sum = self.alpha.sum() + self.beta.sum()
+
+        # IMPORTANT: ensure batch-independent broadcasting
+        alpha = torch.split(self.alpha / w_sum, self.chns, dim=1)
+        beta  = torch.split(self.beta  / w_sum, self.chns, dim=1)
+
+        # ENFORCE SHAPE: (1, C_k, 1, 1)
+        alpha = [a for a in alpha]
+        beta  = [b for b in beta]
+
+        for k in range(len(self.chns)):
+            # Means
+            x_mean = feats0[k].mean(dim=[2, 3], keepdim=True)
+            y_mean = feats1[k].mean(dim=[2, 3], keepdim=True)
+
+            s1 = (2 * x_mean * y_mean + c1) / (x_mean**2 + y_mean**2 + c1)
+
+            # (B, C, H, W) * (1, C, 1, 1) → (B, C, H, W) → sum over C → (B,1,1)
+            d1 = (alpha[k] * s1).sum(1, keepdim=True)
+            dist1 += d1.view(B, 1)
+
+            # Variances and covariance
+            x_var  = ((feats0[k] - x_mean)**2).mean(dim=[2, 3], keepdim=True)
+            y_var  = ((feats1[k] - y_mean)**2).mean(dim=[2, 3], keepdim=True)
+            xy_cov = (feats0[k] * feats1[k]).mean(dim=[2, 3], keepdim=True) - x_mean * y_mean
+
+            s2 = (2 * xy_cov + c2) / (x_var + y_var + c2)
+
+            d2 = (beta[k] * s2).sum(1, keepdim=True)
+            dist2 += d2.view(B, 1)
+
+        return (1 - (dist1 + dist2)).view(B)
+
+
+class MultispectralDISTS(BaseMultispectralMetric):
+    ''' Apply PCA to multispectral images and then compute DISTS on the reduced components. '''
+    
+    def __init__(self, config: Dict[str, Any]) -> None:
+        super().__init__(config)          # BaseMultispectralMetric
+        
+        self.dists_network = SampleWiseDISTSNetwork().to(self.device)
+    
+    @torch.no_grad()
+    def __call__(self, pred_img: torch.Tensor, target_img: torch.Tensor) -> torch.Tensor:
+        """
+        pred_img, target_img: (B,4,H,W) multispectral images
+        Returns: DISTS computed on PCA-reduced images.
+        """
+        with self.autocast_context:
+            pred_pca = self.pca_layer(pred_img, k=self.k, clamp=self.clamp)  # B,3,H,W
+            naip_pca = self.pca_layer(target_img, k=self.k, clamp=self.clamp)  # B,3,H,W
+            
+            dists = self.dists_network(pred_pca, naip_pca)
+        return dists  # B, tensor

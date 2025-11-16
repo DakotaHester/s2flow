@@ -179,19 +179,19 @@ class RK4Sampler(BaseSampler):
 
 
 def get_sampler(config: Dict[str, Any], model: nn.Module) -> BaseSampler:
-    sampler_type = config.get('sampling', {}).get('sampler_type', 'euler').lower()
+    sampler_type = config.get('sampling', {}).get('solver', 'euler').lower()
     
     if sampler_type == 'euler':
-        logger.debug("Using Euler sampler.")
+        logger.debug("Using Euler solver.")
         sampler = EulerSampler(config, model)
     elif sampler_type == 'heun':
-        logger.debug("Using Heun sampler.")
+        logger.debug("Using Heun solver.")
         sampler = HeunSampler(config, model)
     elif sampler_type == 'midpoint':
-        logger.debug("Using Midpoint sampler.")
+        logger.debug("Using Midpoint solver.")
         sampler = MidpointSampler(config, model)
     elif sampler_type == 'rk4':
-        logger.debug("Using RK4 sampler.")
+        logger.debug("Using RK4 solver.")
         sampler = RK4Sampler(config, model)
     else:
         raise ValueError(f"Unsupported sampler type: {sampler_type}")

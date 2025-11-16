@@ -13,7 +13,7 @@ from pathlib import Path
 from time import time
 
 from ..utils import get_device
-from ..metrics import MultispectralLPIPS
+from ..metrics import MultispectralLPIPS, MultispectralDISTS
 from ..engine.sampling import get_sampler
 from ..data.utils import scale
 
@@ -42,6 +42,7 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
     device = get_device()
     sampler = get_sampler(config, model)
     lpips_metric = MultispectralLPIPS(config)
+    dists_metric = MultispectralDISTS(config)
     save_eval_samples = config.get('eval', {}).get('save_eval_samples', True)
     gpu_time = 0.0
     total_start_time = time()
@@ -86,6 +87,7 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
                 ssim = TMF.image.structural_similarity_index_measure(output_batch, target_batch, data_range=(-1, 1), reduction='none') # per-sample SSIM
                 mssim = TMF.image.multiscale_structural_similarity_index_measure(output_batch, target_batch, data_range=(-1, 1), reduction='none') # per-sample MS-SSIM
                 lpips = lpips_metric(output_batch, target_batch) # per-sample LPIPS
+                dists = dists_metric(output_batch, target_batch) # per-sample DISTS
                 
                 output_batch = scale(output_batch.cpu(), in_range=(-1.0, 1.0), out_range=(0, 10000)).numpy()
                 for i in range(output_batch.shape[0]):
@@ -98,7 +100,8 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
                         'PSNR': psnr[i].item(),
                         'SSIM': ssim[i].item(),
                         'MS-SSIM': mssim[i].item(),
-                        'LPIPS': lpips[i].item()
+                        'LPIPS': lpips[i].item(),
+                        'DISTS': dists[i].item()
                     }
                     # Save output image
                     if save_eval_samples:
