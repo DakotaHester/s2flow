@@ -12,8 +12,7 @@ logger = getLogger(__name__)
 
 class BaseSampler(ABC):
     def __init__(self, config: Dict[str, Any], model: nn.Module) -> None:
-        __metaclass__ = ABCMeta
-        
+
         self.model = model
         self.device = get_device()
         self.model.to(self.device)
@@ -44,8 +43,7 @@ class BaseSampler(ABC):
 
 class BaseSampler(ABC):
     def __init__(self, config: Dict[str, Any], model: nn.Module) -> None:
-        __metaclass__ = ABCMeta
-        
+
         self.model = model
         self.device = get_device()
         self.model.to(self.device)
@@ -182,16 +180,16 @@ def get_sampler(config: Dict[str, Any], model: nn.Module) -> BaseSampler:
     sampler_type = config.get('sampling', {}).get('solver', 'euler').lower()
     
     if sampler_type == 'euler':
-        logger.debug("Using Euler solver.")
+        logger.info("Using Euler solver.")
         sampler = EulerSampler(config, model)
     elif sampler_type == 'heun':
-        logger.debug("Using Heun solver.")
+        logger.info("Using Heun solver.")
         sampler = HeunSampler(config, model)
     elif sampler_type == 'midpoint':
-        logger.debug("Using Midpoint solver.")
+        logger.info("Using Midpoint solver.")
         sampler = MidpointSampler(config, model)
     elif sampler_type == 'rk4':
-        logger.debug("Using RK4 solver.")
+        logger.info("Using RK4 solver.")
         sampler = RK4Sampler(config, model)
     else:
         raise ValueError(f"Unsupported sampler type: {sampler_type}")

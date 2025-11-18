@@ -1,5 +1,6 @@
-from typing import Any, Dict, Optional
-from torchmetrics import functional as F
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Tuple
+import pandas as pd
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from torchmetrics.functional.image.dists import DISTSNetwork
 import logging
@@ -16,7 +17,6 @@ logger = logging.getLogger(__name__)
 class BaseMultispectralMetric(ABC):
     
     def __init__(self, config: Dict[str, Any]) -> None:
-        __metaclass__ = ABCMeta
         
         self.device = get_device()
         self.pca_layer = PCAConvLayer(config).to(self.device)
@@ -129,3 +129,102 @@ class MultispectralDISTS(BaseMultispectralMetric):
             
             dists = self.dists_network(pred_pca, naip_pca)
         return dists  # B, tensor
+
+
+class MetricsTracker:
+    """Tracks and manages training/validation metrics across epochs."""
+    
+    def __init__(
+        self, 
+        metric_fns: Dict[str, Callable], 
+        phases: Tuple[str, ...] = ('train', 'val')
+    ):
+        """
+        Initialize metrics tracker.
+        
+        Args:
+            metric_fns: Dictionary mapping metric names to callable functions
+            phases: Tuple of phase names (e.g., 'train', 'val')
+        """
+        self.metric_fns = metric_fns
+        self.metric_names = list(metric_fns.keys())
+        self.phases = phases
+        self.history = {
+            'epoch': [],
+            'lr': [],
+        }
+        
+        for phase in phases:
+            for metric in self.metric_names:
+                self.history[f'{phase}_{metric}'] = []
+    
+    def compute_metrics(
+        self, 
+        loss: torch.Tensor,
+        predictions: torch.Tensor, 
+        targets: torch.Tensor, 
+        phase: str
+    ) -> Dict[str, float]:
+        """
+        Compute all metrics for a batch.
+        
+        Args:
+            loss: Already computed loss tensor (per-sample)
+            predictions: Model predictions
+            targets: Ground truth targets
+            phase: Current phase ('train' or 'val')
+            
+        Returns:
+            Dictionary mapping '{phase}_{metric_name}' to summed metric values
+        """
+        metrics = {}
+        
+        for name, metric_fn in self.metric_fns.items():
+            if name.endswith('loss'):
+                # Loss is already computed, just use it
+                value = loss
+            else:
+                # Compute other metrics
+                value = metric_fn(predictions, targets)
+            
+            # Sum over batch dimension for accumulation
+            metrics[f'{phase}_{name}'] = value.sum().item() if isinstance(value, torch.Tensor) else value
+        
+        return metrics
+    
+    def update_epoch(self, epoch: int, lr: float):
+        """Update epoch and learning rate."""
+        self.history['epoch'].append(epoch)
+        self.history['lr'].append(lr)
+    
+    def update_metrics(self, epoch_metrics: Dict[str, float]):
+        """Update metrics from epoch results."""
+        for phase in self.phases:
+            for metric in self.metric_names:
+                key = f'{phase}_{metric}'
+                self.history[key].append(epoch_metrics.get(key, None))
+    
+    def get_running_metrics(
+        self, 
+        phase: str, 
+        samples_seen: int, 
+        accumulated_metrics: Dict[str, float]
+    ) -> Dict[str, str]:
+        """Get formatted metrics for progress bar."""
+        metrics_fmt = {}
+        for metric in self.metric_names:
+            key = f'{phase}_{metric}'
+            if key in accumulated_metrics:
+                avg = accumulated_metrics[key] / samples_seen
+                metrics_fmt[metric] = f'{avg:.2e}'
+        return metrics_fmt
+    
+    def save_to_csv(self, log_path: Path, filename: str = 'training_metrics.csv'):
+        """Save metrics history to CSV file."""
+        csv_path = log_path / filename
+        logger.debug(f"Saving training metrics to {csv_path}...")
+        pd.DataFrame(self.history).to_csv(csv_path, index=False)
+    
+    def to_dict(self) -> Dict[str, List]:
+        """Return metrics history as dictionary."""
+        return self.history.copy()

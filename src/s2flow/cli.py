@@ -153,7 +153,22 @@ def eval_sr_model(config: Dict[str, Any], logger: logging.Logger):
     
 
 def sr_model_inference(config: Dict[str, Any], logger: logging.Logger):
-    raise NotImplementedError("Super-resolution model inference is not yet implemented.")
+    from .engine.inference import simple_sr_model_inference
+    from .models import get_sr_model
+    from .utils import get_device
+    
+    model = get_sr_model(config)
+    logger.info("Loading pretrained weights for inference...")
+    weights_path = config.get('sr_model', {}).get('pretrained_weights', None)
+    
+    if weights_path is None:
+        raise ValueError("Pretrained weights path must be specified in the config under 'sr_model.pretrained_weights' when running inference jobs.")
+    
+    weights = torch.load(weights_path, map_location=get_device(), weights_only=True)
+    model.load_state_dict(weights, strict=False)
+    logger.info("Pretrained weights loaded successfully.")
+
+    simple_sr_model_inference(config, model)
     
 
 def train_lc_model(config: Dict[str, Any], logger: logging.Logger):

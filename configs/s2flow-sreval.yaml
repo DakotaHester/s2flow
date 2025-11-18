@@ -1,8 +1,8 @@
 job:
   name: s2flow_sr_eval_test
   type: sr_eval
-  log_dir: ./logs
-  out_dir: ./runs
+  log_dir: ./logs/1_steps
+  out_dir: ./runs/1_steps
   cudnn_deterministic: False # set to False for faster training
 
 sr_model:
@@ -33,5 +33,5 @@ metrics:
   pca_lpips_k: 3.0
 
 sampling:
-  num_steps: 50
-  solver: heun
+  num_steps: 1
+  solver: euler

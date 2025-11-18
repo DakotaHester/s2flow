@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, Union
 from logging import getLogger
 import json
 from .utils import get_device
+from segmentation_models_pytorch import Unet, DeepLabV3Plus, Segformer
 
 logger = getLogger(__name__)
 
@@ -44,6 +45,39 @@ class UNetTensorWrapper(nn.Module):
             timestep,
             class_labels=class_labels
         ).sample # Return only the sample tensor (inportant!)
+
+
+class UNetDownBlock(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int):
+        super(UNetDownBlock, self).__init__()
+        self.conv = nn.Sequential(
+            ConvBlock(in_channels, out_channels, batch_norm=True, activation='relu'),
+            ConvBlock(out_channels, out_channels, batch_norm=True, activation='relu')
+        )
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        skip_connection = self.conv(x)
+        pooled_output = self.pool(skip_connection)
+        return pooled_output, skip_connection
+
+class UNetUpBlock(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int):
+        super(UNetUpBlock, self).__init__()
+        
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        
+        self.conv = nn.Sequential(
+            ConvBlock(in_channels + out_channels, out_channels, batch_norm=True, activation='relu'),
+            ConvBlock(out_channels, out_channels, batch_norm=True, activation='relu')
+        )
+
+    def forward(self, x: torch.Tensor, skip_connection: torch.Tensor) -> torch.Tensor:
+        x_upsampled = F.interpolate(x, size=skip_connection.shape[2:], mode='bilinear', align_corners=False)
+        x_concat = torch.cat((skip_connection, x_upsampled), dim=1)
+        return self.conv(x_concat)
+
 
 def get_sr_model(config: Dict[str, Any]) -> nn.Module:
     """Instantiate and return the model based on the provided configuration."""
@@ -99,6 +133,24 @@ def get_sr_model(config: Dict[str, Any]) -> nn.Module:
         logger.debug(f"Saved model complexity metrics to {log_path / 'model_complexity.json'}")
     
     return model
+
+
+def get_lc_model(config: Dict[str, Any]) -> nn.Module:
+    
+    model_config = config.get("lc_model", {})
+    model_type = model_config.get("model_type", "unet")
+    
+    if model_type == 'unet':
+        model = Unet(
+            encoder_name=model_config.get("encoder_name", "resnet101"),
+            in_channels=model_config.get("in_channels", 8),
+            classes=model_config.get("num_classes", 5),
+            activation=None,
+            encoder_weights=model_config.get("encoder_weights", "imagenet")
+        )
+        logger.info("UNet LC model initialized successfully.")
+    
+    
 
 
 def get_model_complexity(model: nn.Module, in_channels: int, sample_size: int) -> Dict[str, int]:
