@@ -47,38 +47,6 @@ class UNetTensorWrapper(nn.Module):
         ).sample # Return only the sample tensor (inportant!)
 
 
-class UNetDownBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int):
-        super(UNetDownBlock, self).__init__()
-        self.conv = nn.Sequential(
-            ConvBlock(in_channels, out_channels, batch_norm=True, activation='relu'),
-            ConvBlock(out_channels, out_channels, batch_norm=True, activation='relu')
-        )
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        skip_connection = self.conv(x)
-        pooled_output = self.pool(skip_connection)
-        return pooled_output, skip_connection
-
-class UNetUpBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int):
-        super(UNetUpBlock, self).__init__()
-        
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        
-        self.conv = nn.Sequential(
-            ConvBlock(in_channels + out_channels, out_channels, batch_norm=True, activation='relu'),
-            ConvBlock(out_channels, out_channels, batch_norm=True, activation='relu')
-        )
-
-    def forward(self, x: torch.Tensor, skip_connection: torch.Tensor) -> torch.Tensor:
-        x_upsampled = F.interpolate(x, size=skip_connection.shape[2:], mode='bilinear', align_corners=False)
-        x_concat = torch.cat((skip_connection, x_upsampled), dim=1)
-        return self.conv(x_concat)
-
-
 def get_sr_model(config: Dict[str, Any]) -> nn.Module:
     """Instantiate and return the model based on the provided configuration."""
     model_config = config.get("sr_model", {})
@@ -143,14 +111,51 @@ def get_lc_model(config: Dict[str, Any]) -> nn.Module:
     if model_type == 'unet':
         model = Unet(
             encoder_name=model_config.get("encoder_name", "resnet101"),
-            in_channels=model_config.get("in_channels", 8),
-            classes=model_config.get("num_classes", 5),
-            activation=None,
+            in_channels=model_config.get("in_channels", 4),
+            classes=model_config.get("num_classes", 7),
+            decoder_interpolation=config.get("decoder_interpolation", "bilinear"),
+            activation=config.get("activation", 'softmax'),
             encoder_weights=model_config.get("encoder_weights", "imagenet")
         )
         logger.info("UNet LC model initialized successfully.")
     
+    elif model_type == 'deeplabv3plus':
+        model = DeepLabV3Plus(
+            encoder_name=model_config.get("encoder_name", "resnet101"),
+            in_channels=model_config.get("in_channels", 4),
+            classes=model_config.get("num_classes", 7),
+            activation=config.get("activation", 'softmax'),
+            encoder_weights=model_config.get("encoder_weights", "imagenet")
+        )
+        logger.info("DeepLabV3+ LC model initialized successfully.")
+    elif model_type == 'segformer':
+        model = Segformer(
+            encoder_name=model_config.get("encoder_name", "mit_b5"),
+            in_channels=model_config.get("in_channels", 4),
+            classes=model_config.get("num_classes", 7),
+            activation=config.get("activation", 'softmax'),
+            encoder_weights=model_config.get("encoder_weights", "imagenet")
+        )
+        logger.info("SegFormer LC model initialized successfully.")
+    else:
+        raise ValueError(f"Unsupported LC model type: {model_type}")
     
+    device = get_device()
+    model.to(device)
+    logger.debug(f"LC Model moved to device: {device}")
+    model_complexity_dict = get_model_complexity(
+        model, 
+        in_channels=model_config.get("in_channels", 4), 
+        sample_size=model_config.get("sample_size", 256)
+    )
+    logger.info(f"LC Model parameters: {model_complexity_dict['parameters']:,}")
+    logger.info(f"LC Model MACs: {model_complexity_dict['macs']:,}")
+    logger.info(f"LC Model FLOPs: {model_complexity_dict['flops']:,}")
+    
+    log_path = config['paths']['log_path'] # raise KeyError if not found - this should be set up already
+    with open(log_path / 'lc_model_complexity.json', 'w') as f:
+        json.dump(model_complexity_dict, f, indent=4)
+        logger.debug(f"Saved LC model complexity metrics to {log_path / 'lc_model_complexity.json'}")
 
 
 def get_model_complexity(model: nn.Module, in_channels: int, sample_size: int) -> Dict[str, int]:
