@@ -9,6 +9,8 @@ from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 import torchmetrics.functional as TMF
 from tqdm import tqdm
+from functools import partial
+from ..loss import focal_loss
 from ..metrics import MultispectralLPIPS # , MultispectralDISTS
 from ..utils import get_device, get_hp_dtype
 
@@ -66,7 +68,6 @@ class FlowMatchingSRTrainer:
         else:
             self.lr_scheduler = cosine_scheduler
         
-        
         self.hp_dtype = torch.float32
         if self.use_amp:
             self.hp_dtype = get_hp_dtype()
@@ -82,14 +83,14 @@ class FlowMatchingSRTrainer:
         self.lpips_metric = MultispectralLPIPS(config)
         # self.dists_metric = MultispectralDISTS(config)
         
-        self.metrics = {
+        self.history_dict = {
             'epoch': [],
             'lr': [],
         }
         self.metric_names = ['l1_loss', 'psnr', 'ssim', 'mssim', 'lpips'] # not using 'dists' for training
         for phase in ('train', 'val'):
             for metric in self.metric_names:
-                self.metrics[f'{phase}_{metric}'] = []
+                self.history_dict[f'{phase}_{metric}'] = []
                 
         logger.info(f"Initialized {self.__class__.__name__} on device {self.device} with model {type(self.model).__name__}")
 
@@ -107,15 +108,15 @@ class FlowMatchingSRTrainer:
         for epoch in range(self.current_epoch, self.num_epochs + 1):
             self.current_epoch = epoch
             
-            self.metrics['epoch'].append(epoch)
-            self.metrics['lr'].append(self.optimizer.param_groups[0]['lr'])
+            self.history_dict['epoch'].append(epoch)
+            self.history_dict['lr'].append(self.optimizer.param_groups[0]['lr'])
             
             logger.debug(f"Starting epoch {epoch}/{self.num_epochs}...")
             epoch_metrics = self._run_epoch(train_dataloader, val_dataloader)
             
             for metric in self.metric_names:
                 for phase in ('train', 'val'):
-                    self.metrics[f'{phase}_{metric}'].append(epoch_metrics.get(f'{phase}_{metric}', None))
+                    self.history_dict[f'{phase}_{metric}'].append(epoch_metrics.get(f'{phase}_{metric}', None))
             
             self.lr_scheduler.step()
             self.save_checkpoint()
@@ -266,6 +267,7 @@ class FlowMatchingSRTrainer:
         
         pd.DataFrame(self.metrics).to_csv(log_file, index=False)
     
+    
     def save_model(self):
         model_file = self.out_path / 'model.pt'
         logger.debug(f"Saving model to {model_file}...")
@@ -273,8 +275,257 @@ class FlowMatchingSRTrainer:
         logger.debug(f"Model saved to {model_file}.")
 
 
-class LandCoverTrainer:
-    ...
+class LandCoverTrainer: 
+    
+    def __init__(self, config: Dict[str, Any], model: nn.Module):
+        
+        self.config = config
+        self.device = get_device()
+        self.model = model.to(self.device)
+        
+        # model output directory
+        self.out_path = config['paths']['out_path']
+        self.checkpoint_path = self.out_path / config.get('job', {}).get('checkpoint_filename', 'checkpoint.pt')
+        self.log_path = config['paths']['log_path']
+        
+        hyperparameters = config.get('hyperparameters', None)
+        if hyperparameters is None:
+            raise ValueError("Hyperparameters must be specified in the config under 'hyperparameters'")
+        self.init_learning_rate = hyperparameters.get('learning_rate', 1e-3)
+        self.batch_size = hyperparameters.get('batch_size', 1024)
+        self.micro_batch_size = hyperparameters.get('micro_batch_size', 32)
+        self.num_epochs = hyperparameters.get('num_epochs', 300)
+        self.warmup_epochs = hyperparameters.get('warmup_epochs', 10)
+        self.weight_decay = hyperparameters.get('weight_decay', 1e-2)
+        self.use_amp = hyperparameters.get('use_amp', True)
+        
+        self.grad_accum_steps = self.batch_size // self.micro_batch_size
+        
+        self.optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=self.init_learning_rate,
+            weight_decay=self.weight_decay,
+        )
+        self.current_epoch = 1
+
+        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer,
+            T_max=self.num_epochs - self.warmup_epochs,
+        )
+        if self.warmup_epochs > 0:
+            warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+                self.optimizer,
+                start_factor=0.1,
+                end_factor=1.0,
+                total_iters=self.warmup_epochs - 1,
+            )
+            self.lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
+                self.optimizer,
+                schedulers=[warmup_scheduler, cosine_scheduler],
+                milestones=[self.warmup_epochs],
+            )
+        else:
+            self.lr_scheduler = cosine_scheduler
+        
+        
+        self.hp_dtype = torch.float32
+        if self.use_amp:
+            self.hp_dtype = get_hp_dtype()
+            logger.info(f"Using AMP with dtype: {self.hp_dtype}")
+        else:
+            logger.info("AMP disabled; using full precision (float32).")
+        
+        if self.hp_dtype != torch.float32:
+            self.scaler = GradScaler(enabled=True)
+        else:
+            self.scaler = None
+        
+        self.lpips_metric = MultispectralLPIPS(config)
+        
+        self.history_dict = {
+            'epoch': [],
+            'lr': [],
+        }
+        self.metric_names = ['focal_loss', 'accuracy', 'precision', 'recall', 'f1_score', 'miou']
+        for phase in ('train', 'val'):
+            for metric in self.metric_names:
+                self.history_dict[f'{phase}_{metric}'] = []
+
+        logger.info(f"Initialized {self.__class__.__name__} on device {self.device} with model {type(self.model).__name__}")
+
+
+    @classmethod
+    def from_checkpoint(cls, config: Dict[str, Any], model: nn.Module):
+        
+        trainer = cls(config, model)
+        trainer.load_checkpoint()
+        return trainer
+    
+    
+    def fit(self, train_dataloader: DataLoader, val_dataloader: Optional[DataLoader]=None) -> None:
+        
+        for epoch in range(self.current_epoch, self.num_epochs + 1):
+            self.current_epoch = epoch
+            
+            self.history_dict['epoch'].append(epoch)
+            self.history_dict['lr'].append(self.optimizer.param_groups[0]['lr'])
+            
+            logger.debug(f"Starting epoch {epoch}/{self.num_epochs}...")
+            epoch_metrics = self._run_epoch(train_dataloader, val_dataloader)
+            
+            for metric in self.metric_names:
+                for phase in ('train', 'val'):
+                    self.history_dict[f'{phase}_{metric}'].append(epoch_metrics.get(f'{phase}_{metric}', None))
+            
+            self.lr_scheduler.step()
+            self.save_checkpoint()
+            self.save_model()
+            self.save_metrics()
+    
+    
+    def _run_epoch(self, train_dataloader: DataLoader, val_dataloader: Optional[DataLoader]=None) -> None:
+        
+        if val_dataloader is not None:
+            phases = ('train', 'val')
+            logger.debug("Validation dataloader provided; running both training and validation phases.")
+        else:
+            phases = ('train',)
+            logger.debug("No validation dataloader provided; running only training phase.")
+        
+        epoch_metrics = {
+            f'{phase}_{metric}': 0.0
+            for metric in self.metric_names
+            for phase in phases
+        }
+        
+        for phase in phases:
+            torch.set_grad_enabled(phase == 'train')
+            if phase == 'train':
+                self.model.train()
+                dataloader = train_dataloader
+            else:
+                if val_dataloader is None:
+                    continue
+                self.model.eval()
+                dataloader = val_dataloader
+            
+            samples_seen = 0
+            self.optimizer.zero_grad(set_to_none=True)
+            
+            with tqdm(dataloader, desc=f"{phase.capitalize()} Epoch {self.current_epoch}/{self.num_epochs}", unit="batches") as pbar:
+                for batch_num, batch_data in enumerate(pbar):
+                    
+                    step_metrics = self._step(batch_num, batch_data, phase)
+                    samples_seen += batch_data[0].size(0)
+                    
+                    for k, v in step_metrics.items():
+                        epoch_metrics[k] += v
+                    
+                    metrics_fmt = {'lr': f'{self.optimizer.param_groups[0]["lr"]:.2e}'}
+                    for metric in self.metric_names:
+                        avg = epoch_metrics[f'{phase}_{metric}'] / samples_seen
+                        metrics_fmt[metric] = f'{avg:.2e}'
+                    pbar.set_postfix(metrics_fmt)
+                    logger.debug(f'Epoch {self.current_epoch} {phase} step {batch_num} metrics: ' + 
+                                '\n'.join([f'{k}: {v}' for k, v in metrics_fmt.items()]))
+                    
+            for metric in self.metric_names:
+                epoch_metrics[f'{phase}_{metric}'] /= samples_seen
+            
+        return epoch_metrics
+
+
+    def _step(self, batch_num: int, batch_data: Tuple[torch.Tensor], phase: str) -> Dict[str, float]:
+        
+        X, y = batch_data
+        X, y = X.to(self.device), y.to(self.device)
+        
+        with autocast(device_type=self.device.type, dtype=self.hp_dtype, enabled=self.use_amp):
+            y_pred = self.model(X) # scale t to [0, 1000] for time embedding
+            loss = focal_loss(y_pred, y, gamma=2.0, reduction='none').mean(dim=(1, 2, 3))
+        
+        if phase == 'train':
+            total_loss = (loss / self.grad_accum_steps).mean()
+            
+            if self.scaler is not None:
+                self.scaler.scale(total_loss).backward()
+            else:
+                total_loss.backward()
+            
+            if (batch_num + 1) % self.grad_accum_steps == 0:
+                if self.scaler is not None:
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    self.optimizer.step()
+                self.optimizer.zero_grad(set_to_none=True)
+        
+        
+        return {
+            f'{phase}_focal_loss': loss.detach(),
+            f'{phase}_accuracy': TMF.classification.multiclass_accuracy(y_pred, y, num_classes=self.model.num_classes, multidim_average='samplewise'),
+            f'{phase}_precision': TMF.classification.multiclass_precision(y_pred, y, num_classes=self.model.num_classes, average='macro', multidim_average='samplewise'),
+            f'{phase}_recall': TMF.classification.multiclass_recall(y_pred, y, num_classes=self.model.num_classes, average='macro', multidim_average='samplewise'),
+            f'{phase}_f1_score': TMF.classification.multiclass_f1_score(y_pred, y, num_classes=self.model.num_classes, average='macro', multidim_average='samplewise'),
+            f'{phase}_miou': TMF.classification.multiclass_jaccard_index(y_pred, y, num_classes=self.model.num_classes, average='macro', multidim_average='samplewise'),
+        }
+        
+    
+
+    def save_checkpoint(self):
+        
+        logger.debug(f"Saving checkpoint to {self.checkpoint_path} at epoch {self.current_epoch}...")
+        
+        checkpoint_dict = {
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'lr_scheduler_state_dict': self.lr_scheduler.state_dict(),
+            'current_epoch': self.current_epoch,
+            'metrics': self.metrics,
+        }
+        
+        if self.scaler is not None:
+            checkpoint_dict['scaler_state_dict'] = self.scaler.state_dict()
+        
+        torch.save(checkpoint_dict, self.checkpoint_path)
+        logger.debug(f"Checkpoint saved to {self.checkpoint_path}.")
+    
+    
+    def load_checkpoint(self):
+        
+        logger.debug(f"Loading checkpoint from {self.checkpoint_path}...")
+        
+        if not self.checkpoint_path.exists():
+            logger.warning(f"Checkpoint file {self.checkpoint_path} does not exist. Starting from scratch.")
+            return
+        
+        checkpoint_dict = torch.load(self.checkpoint_path, map_location=self.device)
+        self.model.load_state_dict(checkpoint_dict['model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint_dict['optimizer_state_dict'])
+        self.lr_scheduler.load_state_dict(checkpoint_dict['lr_scheduler_state_dict'])
+        self.current_epoch = checkpoint_dict['current_epoch'] + 1
+        self.metrics = checkpoint_dict['metrics']
+        
+        if self.scaler is not None and 'scaler_state_dict' in checkpoint_dict:
+            self.scaler.load_state_dict(checkpoint_dict['scaler_state_dict'])
+        
+        logger.info(f"Loaded checkpoint from {self.checkpoint_path}, resuming from epoch {self.current_epoch}.")
+    
+    
+    def save_metrics(self):
+        log_file = self.log_path / 'training_metrics.csv'
+        logger.debug(f"Saving training metrics to {log_file}...")
+        
+        pd.DataFrame(self.metrics).to_csv(log_file, index=False)
+    
+    
+    def save_model(self):
+        model_file = self.out_path / 'model.pt'
+        logger.debug(f"Saving model to {model_file}...")
+        torch.save(self.model.state_dict(), model_file)
+        logger.debug(f"Model saved to {model_file}.")
+    
+    
     
 def train_sr_model(config: Dict[str, Any], model: nn.Module):
     
