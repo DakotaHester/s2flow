@@ -89,7 +89,7 @@ class BaseCPBDataset(BaseDataset, ABC):
         
         input_image = rio.open(input_path).read()  # [C, H, W]
         target_data = rio.open(target_path).read(1)  # [H, W]
-        
+                
         input_tensor = torch.from_numpy(input_image).float()
         target_tensor = torch.from_numpy(target_data).long() - 1 # Shift LC classes to start at 0
         

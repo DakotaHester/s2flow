@@ -114,7 +114,6 @@ def get_lc_model(config: Dict[str, Any]) -> nn.Module:
             in_channels=model_config.get("in_channels", 4),
             classes=model_config.get("num_classes", 7),
             decoder_interpolation=config.get("decoder_interpolation", "bilinear"),
-            activation=config.get("activation", 'softmax'),
             encoder_weights=model_config.get("encoder_weights", "imagenet")
         )
         logger.info("UNet LC model initialized successfully.")
@@ -124,7 +123,6 @@ def get_lc_model(config: Dict[str, Any]) -> nn.Module:
             encoder_name=model_config.get("encoder_name", "resnet101"),
             in_channels=model_config.get("in_channels", 4),
             classes=model_config.get("num_classes", 7),
-            activation=config.get("activation", 'softmax'),
             encoder_weights=model_config.get("encoder_weights", "imagenet")
         )
         logger.info("DeepLabV3+ LC model initialized successfully.")
@@ -133,7 +131,6 @@ def get_lc_model(config: Dict[str, Any]) -> nn.Module:
             encoder_name=model_config.get("encoder_name", "mit_b5"),
             in_channels=model_config.get("in_channels", 4),
             classes=model_config.get("num_classes", 7),
-            activation=config.get("activation", 'softmax'),
             encoder_weights=model_config.get("encoder_weights", "imagenet")
         )
         logger.info("SegFormer LC model initialized successfully.")
@@ -156,6 +153,18 @@ def get_lc_model(config: Dict[str, Any]) -> nn.Module:
     with open(log_path / 'lc_model_complexity.json', 'w') as f:
         json.dump(model_complexity_dict, f, indent=4)
         logger.debug(f"Saved LC model complexity metrics to {log_path / 'lc_model_complexity.json'}")
+    
+    return model
+
+
+# def get_model(config: Dict[str, Any], model_type: str) -> nn.Module:
+#     """Instantiate and return the specified model based on the provided configuration."""
+#     if model_type == 'sr':
+#         return get_sr_model(config)
+#     elif model_type == 'lc':
+#         return get_lc_model(config)
+#     else:
+#         raise ValueError(f"Unknown model type: {model_type}. Must be one of 'sr' or 'lc'.")
 
 
 def get_model_complexity(model: nn.Module, in_channels: int, sample_size: int) -> Dict[str, int]:
@@ -163,7 +172,13 @@ def get_model_complexity(model: nn.Module, in_channels: int, sample_size: int) -
     
     logger.debug("Calculating model complexity...")
     test_input = torch.randn(1, in_channels, sample_size, sample_size).to(next(model.parameters()).device)
-    macs, params = profile(model, inputs=(test_input, 0), verbose=False) # dummy timestep verbose=False)
+    
+    if isinstance(model, UNetTensorWrapper):
+        # For UNetTensorWrapper, we need to provide a dummy timestep
+        macs, params = profile(model, inputs=(test_input, 0), verbose=False) # dummy timestep verbose=False)
+    else:
+        macs, params = profile(model, inputs=(test_input,), verbose=False)
+        
     flops = 2 * macs  # FLOPs is 2x MACs
     return {
         "parameters": int(params),

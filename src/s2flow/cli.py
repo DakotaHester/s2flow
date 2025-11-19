@@ -172,11 +172,56 @@ def sr_model_inference(config: Dict[str, Any], logger: logging.Logger):
     
 
 def train_lc_model(config: Dict[str, Any], logger: logging.Logger):
-    raise NotImplementedError("Land cover model training is not yet implemented.")
+    from .engine.training import LandCoverTrainer
+    from .engine.eval import lc_model_evaluation
+    from .models import get_lc_model
+    from .utils import get_device
+    
+    model = get_lc_model(config)
+    pretrained_weights = config.get('lc_model', {}).get('pretrained_weights', None)
+    if pretrained_weights is not None:
+        logger.info(f"Loading pretrained weights from {pretrained_weights}...")
+        model.load_state_dict(torch.load(pretrained_weights, map_location=get_device(), weights_only=True))
+        logger.info("Pretrained weights loaded successfully.")
+    
+    load_checkpoint = config.get('job', {}).get('load_checkpoint', False)
+    if load_checkpoint:
+        logger.info("`load_checkpoint` is True; loading trainer from checkpoint...")
+        trainer = LandCoverTrainer.from_checkpoint(config, model)
+    else:
+        logger.info("`load_checkpoint` is False; initializing new trainer...")
+        trainer = LandCoverTrainer(config, model)
+    
+    logger.info("Setting up data loaders...")
+    train_loader, val_loader = get_dataloaders(config)
+    
+    logger.info("Starting land cover model training...")
+    trainer.fit(train_loader, val_loader)
+    logger.info("Land cover model training complete.")
+    
+    logger.info("Starting land cover model evaluation...")
+    lc_model_evaluation(config, model)
+    logger.info("Land cover model evaluation complete.")
 
 
 def eval_lc_model(config: Dict[str, Any], logger: logging.Logger):
-    raise NotImplementedError("Land cover model evaluation is not yet implemented.")
+    from .engine.eval import lc_model_evaluation
+    from .models import get_lc_model
+    from .utils import get_device
+    
+    model = get_lc_model(config)
+    logger.info("Loading pretrained weights for evaluation...")
+    weights_path = config.get('lc_model', {}).get('pretrained_weights', None)
+    
+    if weights_path is None:
+        raise ValueError("Pretrained weights path must be specified in the config under 'lc_model.pretrained_weights' when running evaluation jobs.")
+    
+    weights = torch.load(weights_path, map_location=get_device(), weights_only=True)
+    model.load_state_dict(weights, strict=True)
+    logger.info("Pretrained weights loaded successfully.")
+
+    logger.info(f'MODEL DEVICE, {next(model.parameters()).device}')
+    lc_model_evaluation(config, model)
 
 
 def lc_model_inference(config: Dict[str, Any], logger: logging.Logger):

@@ -31,5 +31,5 @@ hyperparameters:
   micro_batch_size: 64
 
 sampling:
-  num_steps: 30
-  solver: euler
+  num_steps: 20
+  solver: midpoint

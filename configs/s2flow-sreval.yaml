@@ -1,8 +1,8 @@
 job:
-  name: s2flow_sr_eval_test
+  name: s2flow_sr_eval_mid75
   type: sr_eval
-  log_dir: ./logs/1_steps
-  out_dir: ./runs/1_steps
+  log_dir: ./logs/
+  out_dir: ./runs/
   cudnn_deterministic: False # set to False for faster training
 
 sr_model:
@@ -26,12 +26,12 @@ data:
   pin_memory: True
   
 hyperparameters:
-  micro_batch_size: 8 # set to 1024 for PCA computation
+  micro_batch_size: 64 # set to 1024 for PCA computation
 
 metrics:
   pca_lpips_clamp: True
   pca_lpips_k: 3.0
 
 sampling:
-  num_steps: 1
-  solver: euler
+  num_steps: 75
+  solver: midpoint
