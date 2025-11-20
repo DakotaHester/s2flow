@@ -94,11 +94,12 @@ def get_sr_model(config: Dict[str, Any]) -> nn.Module:
     logger.info(f"Model MACs: {model_complexity_dict['macs']:,}")
     logger.info(f"Model FLOPs: {model_complexity_dict['flops']:,}")
     
-    log_path = config['paths']['log_path'] # raise KeyError if not found - this should be set up already
-    
-    with open(log_path / 'model_complexity.json', 'w') as f:
-        json.dump(model_complexity_dict, f, indent=4)
-        logger.debug(f"Saved model complexity metrics to {log_path / 'model_complexity.json'}")
+    # log_path = config['paths']['log_path'] # raise KeyError if not found - this should be set up already
+    log_path = config.get('paths', {}).get('log_path', None)
+    if log_path is not None:    
+        with open(log_path / 'model_complexity.json', 'w') as f:
+            json.dump(model_complexity_dict, f, indent=4)
+            logger.debug(f"Saved model complexity metrics to {log_path / 'model_complexity.json'}")
     
     return model
 

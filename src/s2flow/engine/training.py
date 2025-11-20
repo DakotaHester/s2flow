@@ -325,7 +325,7 @@ class LandCoverTrainer(BaseTrainer):
             return torch.stack(results)
             
         return {
-            'accuracy': partial(TMF.classification.multiclass_accuracy, num_classes=self.num_classes, multidim_average='samplewise'),
+            'accuracy': partial(TMF.classification.multiclass_accuracy, num_classes=self.num_classes, average='micro', multidim_average='samplewise'),
             'precision': partial(TMF.classification.multiclass_precision, num_classes=self.num_classes, average='macro', multidim_average='samplewise'),
             'recall': partial(TMF.classification.multiclass_recall, num_classes=self.num_classes, average='macro', multidim_average='samplewise'),
             'f1_score': partial(TMF.classification.multiclass_f1_score, num_classes=self.num_classes, average='macro', multidim_average='samplewise'),

@@ -325,20 +325,39 @@ class BaseSweep(ABC):
             time.sleep(self.sleep_interval)
     
     def _handle_interrupt(self, signum, frame):
-        """Handle Ctrl-C interrupt."""
+        """Handle Ctrl-C interrupt with confirmation."""
+        # Check if this is a forced kill (second Ctrl-C during prompt)
         if self._interrupted:
-            # Second interrupt - force exit
             print("\n\nForce quit requested. Exiting immediately.")
             signal.signal(signal.SIGINT, self._original_sigint_handler)
             raise KeyboardInterrupt
         
+        print("\n\nInterrupt signal received.")
+        
+        try:
+            # New functionality: Confirm intent to stop the sweep
+            confirm = input("Are you sure you want to stop the sweep submission? [y/N]: ").strip().lower()
+            
+            # Default to 'no' (continue running) if empty or explicitly 'n'
+            if confirm not in ('y', 'yes'):
+                print("Resuming sweep submission...")
+                return  # Exit handler; execution resumes, _interrupted remains False
+                
+        except (EOFError, KeyboardInterrupt):
+            # Handle edge case where user hits Ctrl-C/D inside the input prompt
+            print("\nInput interrupted. Resuming sweep...")
+            return
+
+        # If we reach here, the user explicitly said 'yes'
         self._interrupted = True
-        print("\n\nInterrupt received. Sweep submission halted.")
+        print("\nSweep submission halted.")
         
         if self.is_slurm and self.submitted_job_ids:
             self._prompt_cancel_jobs()
         else:
             print("No SLURM jobs to cancel.")
+            # If running directly or no jobs submitted, we exit here
+            exit(0)
     
     def _prompt_cancel_jobs(self):
         """Prompt user to cancel submitted jobs."""

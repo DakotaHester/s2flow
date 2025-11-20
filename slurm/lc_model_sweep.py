@@ -86,9 +86,9 @@ class LCModelSweep(BaseSweep):
         """Generate all LC training jobs."""
         
         # Triple loop over parameters
-        for model in self.models:
-            for source in self.data_sources:
-                for fold in self.folds:
+        for fold in self.folds:
+            for model in self.models:
+                for source in self.data_sources:
                     
                     job = LCModelJob(
                         base_config=self.base_config,
