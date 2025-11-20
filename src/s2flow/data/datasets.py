@@ -188,6 +188,7 @@ def get_lc_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader]:
 
     fold = data_config.get('fold', 0)
     fold = int(fold) # cast to int just in case
+    logger.info(f"Using cross-validation fold {fold} for land cover data loaders.")
     train_dataset = DatasetClass(
         cv_samples_gdf.loc[cv_samples_gdf['fold'] != fold].reset_index(drop=True),
         data_config.get('data_dir_path', './data/cpb_lc'),
