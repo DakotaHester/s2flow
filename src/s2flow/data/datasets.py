@@ -186,7 +186,8 @@ def get_lc_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader]:
     else:
         raise ValueError(f"Unknown source_data: {source_data}. Must be one of 's2', 'naip', 's2sr'.")
 
-    fold = data_config.get('fold', 1)
+    fold = data_config.get('fold', 0)
+    fold = int(fold) # cast to int just in case
     train_dataset = DatasetClass(
         cv_samples_gdf.loc[cv_samples_gdf['fold'] != fold].reset_index(drop=True),
         data_config.get('data_dir_path', './data/cpb_lc'),
