@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import List
 from s2flow.slurm import BaseJob, BaseSweep, SlurmConfig
 
 
@@ -11,7 +11,7 @@ def main() -> None:
         base_config_path='./configs/s2flow-lc_model_sweep.yaml',
         models=['unet', 'deeplabv3plus', 'segformer'],
         data_sources=['s2', 'naip', 's2sr'],
-        folds=[1, 2, 3, 4, 5],
+        folds=[0, 1, 2, 3, 4],
         slurm_config=slurm_config,
     )
     
@@ -80,7 +80,7 @@ class LCModelSweep(BaseSweep):
         # Define parameter space defaults
         self.models = models or ['unet', 'deeplabv3plus', 'segformer']
         self.data_sources = data_sources or ['s2', 'naip', 's2sr']
-        self.folds = folds or [1, 2, 3, 4, 5]
+        self.folds = folds or [0, 1, 2, 3, 4]
 
     def generate_jobs(self):
         """Generate all LC training jobs."""

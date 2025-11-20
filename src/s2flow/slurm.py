@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Optional, Set
 from datetime import datetime
 from abc import ABC, abstractmethod, ABCMeta
 import yaml
+from copy import deepcopy
 
 
 class SlurmConfig:
@@ -58,7 +59,7 @@ class BaseJob(ABC):
         base_out_dir: Path,
         slurm_script_dir: Path,
     ):
-        self.base_config = base_config.copy()
+        self.base_config = deepcopy(base_config)
         self.job_params = job_params
         self.base_log_dir = base_log_dir
         self.base_out_dir = base_out_dir

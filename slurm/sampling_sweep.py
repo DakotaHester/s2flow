@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import List
 from s2flow.slurm import BaseJob, BaseSweep, SlurmConfig
 
 
