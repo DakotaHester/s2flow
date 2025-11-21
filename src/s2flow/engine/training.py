@@ -290,12 +290,12 @@ class LandCoverTrainer(BaseTrainer):
     """Trainer for land cover classification."""
     
     def _init_task_specific(self):
-        self.loss_name = 'focal_loss'
+        self.loss_name = 'ce_loss'
         self.num_classes = self.config.get('lc_model', {}).get('num_classes', 7)
         self.act_fn = nn.Sigmoid() if self.num_classes == 1 else nn.Softmax(dim=1)
         
         self.monitor_config = {
-            'metric': self.config.get('hyperparameters', {}).get('monitor_metric', 'val_focal_loss'),
+            'metric': self.config.get('hyperparameters', {}).get('monitor_metric', 'val_ce_loss'),
             'mode': self.config.get('hyperparameters', {}).get('monitor_mode', 'min')
         }
         logger.debug(f"LandCoverTrainer initialized. Classes: {self.num_classes}, Monitor: {self.monitor_config}")
@@ -338,7 +338,8 @@ class LandCoverTrainer(BaseTrainer):
         with autocast(device_type=self.device.type, dtype=self.hp_dtype, enabled=self.use_amp):
             logits = self.model(X)
             y_pred = self.act_fn(logits)
-            loss = focal_loss(y_pred, y, gamma=2.0, reduction='none').mean(dim=1)
+            # loss = focal_loss(y_pred, y, gamma=2.0, reduction='none').mean(dim=1)
+            loss = F.cross_entropy(logits, y.long(), reduction='none').mean(dim=1)
             
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"LC Fwd - Logits: {logits.shape}, Loss Mean: {loss.mean().item():.4f}")
