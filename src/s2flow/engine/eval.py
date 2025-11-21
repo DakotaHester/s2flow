@@ -281,7 +281,7 @@ def lc_model_evaluation(config: Dict[str, Any], model: nn.Module) -> None:
                     for i in range(pred_batch_cpu.shape[0]):
                         out_image = pred_batch_cpu[i] + 1
                         out_profile = profiles[i].copy()
-                        out_profile.update(dtype='uint8', count=1)
+                        out_profile.update(dtype='uint8', count=1, photometric='palette')
                         out_filename = f"{filenames[i]}.tif"
                         logger.debug(f"Saving output image: {out_filename}")
                         with rio.open(image_out_path / out_filename, 'w', **out_profile) as dst:
