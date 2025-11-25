@@ -15,7 +15,7 @@ lc_model:
   encoder_weights: imagenet
 
 data:
-  samples_par_path: ./data/cpb_lc/samples.par
+  samples_par_path: ./data/cpb_lc/samples_1sr_step.par
   data_dir_path: ./data/cpb_lc
   # source_data: naip # options: s2, naip, s2sr
   # fold: 1 # which cross-validation fold to use (1-5)
