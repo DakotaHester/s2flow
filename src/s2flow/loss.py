@@ -35,6 +35,7 @@ def focal_loss(
     """
      # Clamp predictions to prevent extreme values
     y_pred = torch.clamp(y_pred, smooth, 1.0 - smooth)
+    assert y_true.max() < y_pred.shape[1], "y_true contains class indices out of range."
     
     # Convert labels to one-hot encoding
     num_classes = y_pred.shape[1]

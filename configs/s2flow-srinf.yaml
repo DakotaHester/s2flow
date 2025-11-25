@@ -25,11 +25,11 @@ sr_model:
 data:
   data_root_path: ./data/cpb_lc/sentinel2
   glob_pattern: '*.tif'
-  out_root_path: ./data/cpb_lc/sentinel2_sr
+  out_root_path: ./data/cpb_lc/sentinel2_sr_steps_1
   
 hyperparameters:
   micro_batch_size: 64
 
 sampling:
-  num_steps: 20
-  solver: midpoint
+  num_steps: 1
+  solver: euler

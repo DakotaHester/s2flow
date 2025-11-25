@@ -166,6 +166,9 @@ def lc_model_evaluation(config: Dict[str, Any], model: nn.Module) -> None:
     samples_gdf = gpd.read_parquet(samples_par_path)
     logger.debug(f"Loaded samples_gdf with shape: {samples_gdf.shape}")
     test_samples_gdf = samples_gdf[samples_gdf['split'] == 'test'].reset_index(drop=True)
+    # TEMPORARY: Use 'val' split for testing
+    # test_samples_gdf = samples_gdf[samples_gdf['split'] == 'train'].reset_index(drop=True)
+    # test_samples_gdf = test_samples_gdf[test_samples_gdf['fold'] == config.get('data', {}).get('fold', 0)].reset_index(drop=True)
     logger.debug(f"Filtered test_samples_gdf with shape: {test_samples_gdf.shape}")
     logger.info(f"Running inference on {len(test_samples_gdf)} test samples...")
     
