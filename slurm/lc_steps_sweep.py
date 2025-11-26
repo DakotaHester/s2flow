@@ -105,10 +105,9 @@ class LCStepSweep(BaseSweep):
         """Generate all LC training jobs."""
         
         # Triple loop over parameters
-        for steps in self.num_steps:
+        for fold in self.folds:
             for model in self.models:
-                for fold in self.folds:
-                    
+                for steps in self.num_steps:    
                     job = LCStepSweepJob(
                         base_config=self.base_config,
                         job_params={
