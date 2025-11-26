@@ -35,10 +35,13 @@ class BaseTrainer(ABC):
         self.out_path = config['paths']['out_path']
         self.log_path = config['paths']['log_path']
         self.checkpoint_path = self.out_path / config.get('job', {}).get('checkpoint_filename', 'checkpoint.pt')
+        self.model_path = self.out_path / 'model.pt'
         self.best_model_path = self.out_path / 'best_model.pt'
         logger.debug(f"Output path: {self.out_path}")
         logger.debug(f"Checkpoint path: {self.checkpoint_path}")
-        
+        logger.debug(f"Best model path: {self.best_model_path}")
+        logger.debug(f"Log path: {self.log_path}")
+                
         # Hyperparameters
         hp = config.get('hyperparameters', {})
         self.init_lr = hp.get('learning_rate', 1e-3)
@@ -139,6 +142,7 @@ class BaseTrainer(ABC):
             self.lr_scheduler.step()
             self.save_checkpoint()
             self.save_metrics()
+            self.save_model()
             
         if self.monitor_config and self.best_model_path.exists():
             logger.info(f"Training finished. Loading best model from {self.best_model_path}...")
@@ -228,6 +232,12 @@ class BaseTrainer(ABC):
         }
         if self.scaler: state['scaler'] = self.scaler.state_dict()
         torch.save(state, self.checkpoint_path)
+    
+    
+    def save_model(self):
+        model_path = self.out_path / 'model.pt'
+        logger.debug(f"Saving latest model to {model_path}...")
+        torch.save(self.model.state_dict(), model_path)
     
     def load_checkpoint(self):
         if not self.checkpoint_path.exists(): 

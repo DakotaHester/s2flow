@@ -196,9 +196,13 @@ def lc_model_evaluation(config: Dict[str, Any], model: nn.Module) -> None:
     }
     input_col_name = source_col_map.get(source_data, 's2_path')
     logger.debug(f"input_col_name: {input_col_name}")
-    with rio.open(data_dir_path / test_samples_gdf.iloc[0]['lc_path']) as src:
-        colormap = src.colormap(1)
-    logger.debug("Loaded colormap from first LC file")
+    colormap = None
+    try:
+        with rio.open(data_dir_path / test_samples_gdf.iloc[0]['lc_path']) as src:
+            colormap = src.colormap(1)
+        logger.debug("Loaded colormap from first LC file")
+    except Exception as e:
+        logger.warning(f"Could not load colormap from LC file: {e}. Proceeding without colormap.")
     
     confusion_matrix = torch.zeros(num_classes, num_classes, dtype=torch.long)
     logger.debug(f"Initialized confusion_matrix: {confusion_matrix.shape}")
@@ -289,7 +293,8 @@ def lc_model_evaluation(config: Dict[str, Any], model: nn.Module) -> None:
                         logger.debug(f"Saving output image: {out_filename}")
                         with rio.open(image_out_path / out_filename, 'w', **out_profile) as dst:
                             dst.write(out_image, 1)
-                            dst.write_colormap(1, colormap)
+                            if colormap is not None:
+                                dst.write_colormap(1, colormap)
                 
                 if confusion_matrix.sum() > 0:
                     overall_acc = confusion_matrix.diag().sum().float() / confusion_matrix.sum()

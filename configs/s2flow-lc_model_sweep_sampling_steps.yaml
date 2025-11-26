@@ -1,9 +1,8 @@
 job:
-  name: s2flow_lc_train_class_determination
-  # type: lc_train
-  type: lc_eval
-  log_dir: ./logs
-  out_dir: ./runs
+  name: s2flow_lc_model_sweep_<NUM_STEPS>
+  type: lc_train
+  log_dir: ./logs/lc_model_sweep_sampling_steps
+  out_dir: ./runs/lc_model_sweep_sampling_steps
   load_checkpoint: False
   checkpoint_filename: checkpoint.pt
   cudnn_deterministic: False # set to False for faster training
@@ -12,17 +11,16 @@ lc_model:
   model_type: segformer # options: unet, deeplabv3plus, segformer
   in_channels: 4
   sample_size: 256
-  num_classes: 56
+  num_classes: 5
   encoder_weights: imagenet
-  pretrained_weights: 'runs/s2flow_lc_train_class_determination/model.pt'
 
 data:
-  samples_par_path: ./data/cpb_lc/samples_fullscheme.par
-  data_dir_path: ./data/cpb_lc
-  source_data: s2sr # options: s2, naip, s2sr
-  fold: 0 # which cross-validation fold to use (0-4)
+  samples_par_path: ./data/cpb_lc_var_steps/cpb_lc_<NUM_STEPS>/samples.par
+  data_dir_path: ./data/cpb_lc_var_steps/cpb_lc_<NUM_STEPS>/
+  source_data: s2sr
+  fold: 0 # which cross-validation fold to use 0-4
   augmentations: spatial
-  num_workers: 8
+  num_workers: 4
   pin_memory: True
   
 hyperparameters:
@@ -33,6 +31,3 @@ hyperparameters:
   warmup_epochs: 10 
   weight_decay: 0.01
   use_amp: True
-
-eval:
-  save_eval_samples: False
