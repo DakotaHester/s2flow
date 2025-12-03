@@ -3,7 +3,7 @@ job:
   type: sr_train
   log_dir: ./logs
   out_dir: ./runs
-  load_checkpoint: False
+  load_checkpoint: True
   checkpoint_filename: checkpoint.pt
   cudnn_deterministic: False # set to False for faster training
 

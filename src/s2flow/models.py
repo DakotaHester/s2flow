@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import torch
 import torch.nn as nn
@@ -7,6 +8,7 @@ from typing import Dict, Any, Optional, Union
 from logging import getLogger
 import json
 from .utils import get_device
+from segmentation_models_pytorch import Unet, DeepLabV3Plus, Segformer
 
 logger = getLogger(__name__)
 
@@ -44,6 +46,7 @@ class UNetTensorWrapper(nn.Module):
             class_labels=class_labels
         ).sample # Return only the sample tensor (inportant!)
 
+
 def get_sr_model(config: Dict[str, Any]) -> nn.Module:
     """Instantiate and return the model based on the provided configuration."""
     model_config = config.get("sr_model", {})
@@ -61,6 +64,27 @@ def get_sr_model(config: Dict[str, Any]) -> nn.Module:
     model.to(device)
     logger.debug(f"Model moved to device: {device}")
     
+    if model_config.get('compile_model', False):
+        if os.getenv('HOSTNAME', 'gcer-a100') != 'gcer-a100':
+            logger.info("Compiling model with torch.compile()...")
+            # need to set the following things for TF32 to work properly
+            # Check if TF32 is available (requires Ampere or newer, compute capability >= 8.0)
+            if device.type == 'cuda':
+                compute_cap = torch.cuda.get_device_capability(device=device)
+                if compute_cap[0] >= 8:  # Ampere (A100, A10, etc.) or newer
+                    logger.info(f"TF32 available (compute capability {compute_cap[0]}.{compute_cap[1]}). Enabling TF32 precision...")
+                    torch.set_float32_matmul_precision('high')
+                    torch.backends.cudnn.conv.fp32_precision = 'tf32'
+                    torch.backends.cuda.matmul.fp32_precision = 'tf32'
+                else:
+                    logger.info(f"TF32 not available (compute capability {compute_cap[0]}.{compute_cap[1]} < 8.0). Using default precision.")
+                    
+            torch.backends.cuda.matmul.fp32_precision = 'tf32'
+            model.compile()
+            logger.info("Model compiled successfully.")
+        else:
+            logger.warning("Model compilation is NOT supported on 'gcer-a100' hostname. Skipping compilation.")
+    
     model_complexity_dict = get_model_complexity(
         model, 
         in_channels=model_config.get("in_channels", 8), 
@@ -70,13 +94,78 @@ def get_sr_model(config: Dict[str, Any]) -> nn.Module:
     logger.info(f"Model MACs: {model_complexity_dict['macs']:,}")
     logger.info(f"Model FLOPs: {model_complexity_dict['flops']:,}")
     
-    log_path = config['paths']['log_path'] # raise KeyError if not found - this should be set up already
-    
-    with open(log_path / 'model_complexity.json', 'w') as f:
-        json.dump(model_complexity_dict, f, indent=4)
-        logger.debug(f"Saved model complexity metrics to {log_path / 'model_complexity.json'}")
+    # log_path = config['paths']['log_path'] # raise KeyError if not found - this should be set up already
+    log_path = config.get('paths', {}).get('log_path', None)
+    if log_path is not None:    
+        with open(log_path / 'model_complexity.json', 'w') as f:
+            json.dump(model_complexity_dict, f, indent=4)
+            logger.debug(f"Saved model complexity metrics to {log_path / 'model_complexity.json'}")
     
     return model
+
+
+def get_lc_model(config: Dict[str, Any]) -> nn.Module:
+    
+    model_config = config.get("lc_model", {})
+    model_type = model_config.get("model_type", "unet")
+    
+    if model_type == 'unet':
+        model = Unet(
+            encoder_name=model_config.get("encoder_name", "resnet101"),
+            in_channels=model_config.get("in_channels", 4),
+            classes=model_config.get("num_classes", 7),
+            decoder_interpolation=config.get("decoder_interpolation", "bilinear"),
+            encoder_weights=model_config.get("encoder_weights", "imagenet")
+        )
+        logger.info("UNet LC model initialized successfully.")
+    
+    elif model_type == 'deeplabv3plus':
+        model = DeepLabV3Plus(
+            encoder_name=model_config.get("encoder_name", "resnet101"),
+            in_channels=model_config.get("in_channels", 4),
+            classes=model_config.get("num_classes", 7),
+            encoder_weights=model_config.get("encoder_weights", "imagenet")
+        )
+        logger.info("DeepLabV3+ LC model initialized successfully.")
+    elif model_type == 'segformer':
+        model = Segformer(
+            encoder_name=model_config.get("encoder_name", "mit_b5"),
+            in_channels=model_config.get("in_channels", 4),
+            classes=model_config.get("num_classes", 7),
+            encoder_weights=model_config.get("encoder_weights", "imagenet")
+        )
+        logger.info("SegFormer LC model initialized successfully.")
+    else:
+        raise ValueError(f"Unsupported LC model type: {model_type}")
+    
+    device = get_device()
+    model.to(device)
+    logger.debug(f"LC Model moved to device: {device}")
+    model_complexity_dict = get_model_complexity(
+        model, 
+        in_channels=model_config.get("in_channels", 4), 
+        sample_size=model_config.get("sample_size", 256)
+    )
+    logger.info(f"LC Model parameters: {model_complexity_dict['parameters']:,}")
+    logger.info(f"LC Model MACs: {model_complexity_dict['macs']:,}")
+    logger.info(f"LC Model FLOPs: {model_complexity_dict['flops']:,}")
+    
+    log_path = config['paths']['log_path'] # raise KeyError if not found - this should be set up already
+    with open(log_path / 'lc_model_complexity.json', 'w') as f:
+        json.dump(model_complexity_dict, f, indent=4)
+        logger.debug(f"Saved LC model complexity metrics to {log_path / 'lc_model_complexity.json'}")
+    
+    return model
+
+
+# def get_model(config: Dict[str, Any], model_type: str) -> nn.Module:
+#     """Instantiate and return the specified model based on the provided configuration."""
+#     if model_type == 'sr':
+#         return get_sr_model(config)
+#     elif model_type == 'lc':
+#         return get_lc_model(config)
+#     else:
+#         raise ValueError(f"Unknown model type: {model_type}. Must be one of 'sr' or 'lc'.")
 
 
 def get_model_complexity(model: nn.Module, in_channels: int, sample_size: int) -> Dict[str, int]:
@@ -84,7 +173,13 @@ def get_model_complexity(model: nn.Module, in_channels: int, sample_size: int) -
     
     logger.debug("Calculating model complexity...")
     test_input = torch.randn(1, in_channels, sample_size, sample_size).to(next(model.parameters()).device)
-    macs, params = profile(model, inputs=(test_input, 0), verbose=False) # dummy timestep verbose=False)
+    
+    if isinstance(model, UNetTensorWrapper):
+        # For UNetTensorWrapper, we need to provide a dummy timestep
+        macs, params = profile(model, inputs=(test_input, 0), verbose=False) # dummy timestep verbose=False)
+    else:
+        macs, params = profile(model, inputs=(test_input,), verbose=False)
+        
     flops = 2 * macs  # FLOPs is 2x MACs
     return {
         "parameters": int(params),

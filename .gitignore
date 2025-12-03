@@ -15,3 +15,5 @@ logs/
 # data/
 data/s2flow-s2naip
 data/cpb_lc
+
+slurm_scripts/

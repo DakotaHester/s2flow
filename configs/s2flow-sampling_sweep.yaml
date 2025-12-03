@@ -1,8 +1,8 @@
 job:
   name: s2flow_sr_sampling_sweep
   type: sr_eval
-  log_dir: ./logs/sampling_sweep
-  out_dir: ./runs/sampling_sweep
+  log_dir: ./logs/sampling_sweep/
+  out_dir: ./runs/sampling_sweep/
   cudnn_deterministic: False # set to False for faster training
 
 sr_model:
@@ -16,15 +16,19 @@ sr_model:
   layers_per_block: 2
   norm_num_groups: 32
   time_embedding_type: positional
-  pretrained_weights: 'runs/s2flow_sr_train_20251113/model.pt'
+  pretrained_weights: 'runs/s2flow_sr_train/model.pt'
+  compile_model: True # will be set to False if on host gcer-a100 
 
 data:
   samples_par_path: ./data/s2flow-s2naip/samples.par
   data_dir_path: ./data/s2flow-s2naip
   
 hyperparameters:
-  micro_batch_size: 8 # set to 1024 for PCA computation
+  micro_batch_size: 32 # set to 1024 for PCA computation
 
 metrics:
   pca_lpips_clamp: True
   pca_lpips_k: 3.0
+
+eval:
+  save_eval_samples: False

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import List
 from s2flow.slurm import BaseJob, BaseSweep, SlurmConfig
 
 
@@ -11,7 +11,7 @@ def main() -> None:
         num_steps_range=(1, 100, 5),
         slurm_config=slurm_config,
     )
-    sweep.run(dry_run=True)
+    sweep.run()
         
         
 
@@ -25,7 +25,7 @@ class SREvalJob(BaseJob):
             self.base_config['sampling'] = {}
         self.base_config['sampling']['solver'] = self.job_params['solver']
         self.base_config['sampling']['num_steps'] = self.job_params['num_steps']
-    
+            
     def _generate_job_name(self) -> str:
         """Generate job name from parameters."""
         solver = self.job_params['solver']
@@ -57,7 +57,7 @@ class SREvalSweep(BaseSweep):
     ):
         super().__init__(
             base_config_path=base_config_path,
-            sweep_name="s2flow_sr_eval_sweep",
+            sweep_name="s2flow_sr_sampling_sweep",
             timestamp=timestamp,
             slurm_config=slurm_config,
             hostname_check=hostname_check,
@@ -73,11 +73,12 @@ class SREvalSweep(BaseSweep):
             self.num_steps_list += list(range(max(5, start), stop + 1, step))
         else:
             self.num_steps_list = list(range(start, stop + 1, step))
+        self.num_steps_list.reverse() # Start with largest num_steps
     
     def generate_jobs(self):
         """Generate all SR evaluation jobs."""
-        for solver in self.solvers:
-            for num_steps in self.num_steps_list:
+        for num_steps in self.num_steps_list:
+            for solver in self.solvers:
                 job = SREvalJob(
                     base_config=self.base_config,
                     job_params={

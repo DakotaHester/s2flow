@@ -1,0 +1,33 @@
+job:
+  name: s2flow_lc_model_sweep
+  type: lc_train
+  log_dir: ./logs/lc_model_sweep
+  out_dir: ./runs/lc_model_sweep 
+  load_checkpoint: False
+  checkpoint_filename: checkpoint.pt
+  cudnn_deterministic: False # set to False for faster training
+
+lc_model:
+  # model_type: segformer # options: unet, deeplabv3plus, segformer
+  in_channels: 4
+  sample_size: 256
+  num_classes: 7
+  encoder_weights: imagenet
+
+data:
+  samples_par_path: ./data/cpb_lc/samples_1sr_step.par
+  data_dir_path: ./data/cpb_lc
+  # source_data: naip # options: s2, naip, s2sr
+  # fold: 1 # which cross-validation fold to use (1-5)
+  augmentations: spatial
+  num_workers: 8
+  pin_memory: True
+  
+hyperparameters:
+  learning_rate: 0.0001
+  batch_size: 32
+  micro_batch_size: 16 
+  num_epochs: 100
+  warmup_epochs: 10 
+  weight_decay: 0.01
+  use_amp: True

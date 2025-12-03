@@ -15,7 +15,7 @@ class SpatialDataAugmentations:
         # Generate random transforms
         do_hflip = torch.rand(1) > 0.5
         do_vflip = torch.rand(1) > 0.5
-        rot_angle = torch.randint(0, 4, (1,)).item() * 90
+        rot_angle = torch.randint(0, 4, (1,)).item()
 
         transformed = []
         for img in images:
@@ -23,7 +23,7 @@ class SpatialDataAugmentations:
                 img = F.hflip(img)
             if do_vflip:
                 img = F.vflip(img)
-            img = F.rotate(img, rot_angle)
+            img = torch.rot90(img, rot_angle, dims=[-2, -1])
             transformed.append(img)
         return tuple(transformed)
 
