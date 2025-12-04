@@ -4,7 +4,7 @@ from s2flow.slurm import BaseJob, BaseSweep, SlurmConfig
 
 
 def main() -> None:
-    slurm_config = SlurmConfig(memory='32G')
+    slurm_config = SlurmConfig(memory='64G')
     
     # Initialize the Inference Sweep
     sweep = LCSlidingWindowSweep(

@@ -26,7 +26,7 @@ lc_model:
   encoder_name: mit_b5
   in_channels: 4
   num_classes: 5
-  pretrained_weights: ./runs/s2flow_lc_sampling_steps_sweep/steps_1/segformer/fold_2/lc_step1_segformer_f2/model.pt
+  pretrained_weights: ./runs/s2flow_lc_sampling_steps_sweep/20251126_165107/steps_1/segformer/fold_2/lc_step1_segformer_f2/model.pt
 
 sampling:
   solver: euler
