@@ -816,8 +816,6 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
             input_profile = src.profile.copy()
             input_transform = src.transform
         
-        raster_data = raster_data[:, :1024, :1024]
-        
         logger.debug(f"Input raster shape: {raster_data.shape}")
         logger.debug(f"Input CRS: {input_profile.get('crs')}")
         

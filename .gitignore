@@ -15,6 +15,7 @@ logs/
 # data/
 data/s2flow-s2naip
 data/cpb_lc
+data/
 
 slurm_scripts/
 *.swp
