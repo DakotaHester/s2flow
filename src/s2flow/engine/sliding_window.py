@@ -722,7 +722,7 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
         output_profile.update(
             count=1,
             dtype='uint8',
-            photometric='palette',
+            # photometric='palette',
             transform=rio.Affine(
                 input_transform.a / self.upscale_factor,
                 input_transform.b,
@@ -733,8 +733,10 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
             ),
             nodata=0,
             compress='lzw',
-            photometric='palette' # Use palette for LC classes
         )
+        
+        if self.colormap is not None:
+            output_profile['photometric'] = 'palette'
         return output_profile
     
     def _save_output(
@@ -760,9 +762,10 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
         )
         
         with rio.open(output_path, 'w', **profile) as dst:
-            dst.write(class_predictions + 1, 1)  # Add 1 for 1-indexed classes
             if self.colormap is not None:
                 dst.write_colormap(1, self.colormap)
+            dst.write(class_predictions + 1, 1)  # Add 1 for 1-indexed classes
+
         
         logger.info(f"Saved LC prediction output to: {output_path}")
     
@@ -784,7 +787,7 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
         probs = super().process_raster(raster_data)
         
         # Get class predictions
-        predictions = np.argmax(probs, axis=0).astype(np.uint8) + 1 # 1-indexed
+        predictions = np.argmax(probs, axis=0).astype(np.uint8)
         
         if return_probs:
             return probs, predictions
@@ -812,6 +815,8 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
             raster_data = src.read().astype(np.float32)
             input_profile = src.profile.copy()
             input_transform = src.transform
+        
+        raster_data = raster_data[:, :1024, :1024]
         
         logger.debug(f"Input raster shape: {raster_data.shape}")
         logger.debug(f"Input CRS: {input_profile.get('crs')}")
