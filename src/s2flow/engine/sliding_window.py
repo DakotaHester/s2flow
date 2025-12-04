@@ -638,7 +638,8 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
         logger.debug(f"Number of classes: {self._num_classes}")
         
         # Colormap for output
-        self.colormap = config.get('inference', {}).get('colormap', None)
+        colormap = config.get('inference', {}).get('colormap', None)
+        self.colormap = {int(k): tuple(v) for k, v in colormap.items()} if colormap else None
     
     @property
     def output_channels(self) -> int:
@@ -731,7 +732,8 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
                 input_transform.f
             ),
             nodata=0,
-            compress='lz77'
+            compress='lzw',
+            photometric='palette' # Use palette for LC classes
         )
         return output_profile
     

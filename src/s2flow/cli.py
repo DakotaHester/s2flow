@@ -331,6 +331,7 @@ def lc_sliding_window_inference(config: Dict[str, Any], logger: logging.Logger):
     
     sr_weights = torch.load(sr_weights_path, map_location=device, weights_only=True)
     sr_model.load_state_dict(sr_weights, strict=False)
+    sr_model.eval()
     logger.info("SR pretrained weights loaded successfully.")
     
     # Load LC model
@@ -346,6 +347,7 @@ def lc_sliding_window_inference(config: Dict[str, Any], logger: logging.Logger):
     
     lc_weights = torch.load(lc_weights_path, map_location=device, weights_only=True)
     lc_model.load_state_dict(lc_weights, strict=True)
+    lc_model.eval()
     logger.info("LC pretrained weights loaded successfully.")
     
     # Get paths from config
