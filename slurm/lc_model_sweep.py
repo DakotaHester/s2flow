@@ -10,7 +10,7 @@ def main() -> None:
     sweep = LCModelSweep(
         base_config_path='./configs/s2flow-lc_model_sweep.yaml',
         models=['unet', 'deeplabv3plus', 'segformer'],
-        data_sources=['s2', 'naip', 's2sr'],
+        data_sources=['s2', 'naip'],
         folds=[0, 1, 2, 3, 4],
         slurm_config=slurm_config,
     )

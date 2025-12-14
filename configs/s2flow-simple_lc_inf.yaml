@@ -1,0 +1,36 @@
+job:
+  name: s2flow_lc_inference
+  type: lc_inference
+  log_dir: ./logs
+  out_dir: ./runs
+  add_completed_file: true
+
+data:
+  data_root_path: /path/to/input/s2_tiles
+  glob_pattern: "**/*.tif"
+  out_root_path: ./output/lc_predictions
+  # Input data type: 's2' (0-10000), 'naip' (0-255), or 's2sr' (0-10000)
+  source_data: s2sr
+
+lc_model:
+  model_type: deeplabv3plus
+  encoder_name: resnet101
+  in_channels: 4
+  num_classes: 7
+  pretrained_weights: /path/to/lc_model_weights.pt
+
+hyperparameters:
+  micro_batch_size: 8
+  use_amp: true
+
+# Optional: colormap for output (NLCD-style, 1-indexed)
+# If not specified, no colormap will be written
+inference:
+  save_colormap: true
+  colormap:
+    0: [0, 0, 0, 0]           # Nodata: Transparent
+    1: [81, 108, 151, 255]    # Open Water
+    2: [179, 253, 214, 255]   # Low Vegetation/Herbaceous
+    3: [55, 120, 78, 255]     # Woody Vegetation/Tree Canopy
+    4: [152, 152, 153, 255]   # Impervious Surfaces/Structures
+    5: [74, 37, 20, 255]      # Barren Land

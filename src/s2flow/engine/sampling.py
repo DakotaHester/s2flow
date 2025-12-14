@@ -10,36 +10,6 @@ from abc import ABC, abstractmethod, ABCMeta
 from ..utils import get_hp_dtype, get_device
 logger = getLogger(__name__)
 
-class BaseSampler(ABC):
-    def __init__(self, config: Dict[str, Any], model: nn.Module) -> None:
-
-        self.model = model
-        self.device = get_device()
-        self.model.to(self.device)
-        
-        self.use_amp = config.get('hyperparameters', None).get('use_amp', True)
-        if self.use_amp:
-            hp_dtype = get_hp_dtype()
-            logger.debug(f"Using AMP with dtype: {hp_dtype}")
-            self.autocast_context = autocast(device_type=self.device.type, dtype=hp_dtype, enabled=True)
-        else:
-            logger.debug("AMP disabled; using full precision (float32).")
-            self.autocast_context = nullcontext()
-        
-        self.num_timesteps = config.get('sampling', {}).get('num_steps', 50)
-        self.timesteps = torch.linspace(0, 1, self.num_timesteps, device=self.device)
-        if self.num_timesteps > 1:
-            self.step_size = self.timesteps[1] - self.timesteps[0]
-        elif self.num_timesteps == 1:
-            self.step_size = 1.0
-        else:
-            raise ValueError("num_steps must be at least 1.")
-    
-    @abstractmethod
-    @torch.no_grad()
-    def sample(self, cond: torch.Tensor) -> torch.Tensor:
-        pass
-
 
 class BaseSampler(ABC):
     def __init__(self, config: Dict[str, Any], model: nn.Module) -> None:
@@ -54,7 +24,7 @@ class BaseSampler(ABC):
             logger.debug(f"Using AMP with dtype: {hp_dtype}")
             self.autocast_context = autocast(device_type=self.device.type, dtype=hp_dtype, enabled=True)
         else:
-            logger.debug("AMP disabled; using full precision (float32).")
+            logger.debug("AMP disable; using full precision (float32).")
             self.autocast_context = nullcontext()
         
         self.num_timesteps = config.get('sampling', {}).get('num_steps', 50.0)
@@ -63,6 +33,21 @@ class BaseSampler(ABC):
             self.timesteps = torch.linspace(0.0, 1 - self.step_size, self.num_timesteps, device=self.device)
         else:
             raise ValueError(f"num_timesteps must be at least 1, got {self.num_timesteps}.")
+
+        self.fixed_noise = config.get('sampling', {}).get('fixed_noise', False)
+        if self.fixed_noise:
+            logger.info("Using fixed noise for sampling (deterministic outputs).")
+            torch.manual_seed(1701)
+            self.x_0 = torch.randn(4, 256, 256)
+        
+        self.show_pbar = config.get('sampling', {}).get('show_pbar', True)
+    
+    def _get_x0(self, batch_size: int, cond_shape: torch.Size) -> torch.Tensor:
+        if self.fixed_noise:
+            x0 = self.x_0.unsqueeze(0).repeat(batch_size, 1, 1, 1).to(self.device)
+        else:
+            x0 = torch.randn(cond_shape, device=self.device)
+        return x0
     
     @abstractmethod
     @torch.no_grad()
@@ -74,8 +59,9 @@ class EulerSampler(BaseSampler):
     @torch.no_grad()
     def sample(self, cond: torch.Tensor) -> torch.Tensor:
         
-        x = torch.randn_like(cond, device=self.device)
-        for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step"):
+        # x = torch.randn_like(cond, device=self.device)
+        x = self._get_x0(cond.shape[0], cond.shape)
+        for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
             
             model_input = torch.cat((x, cond), dim=1)
@@ -91,8 +77,9 @@ class HeunSampler(BaseSampler):
     @torch.no_grad()
     def sample(self, cond: torch.Tensor) -> torch.Tensor:
 
-        x = torch.randn_like(cond, device=self.device)
-        for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step"):
+        # x = torch.randn_like(cond, device=self.device)
+        x = self._get_x0(cond.shape[0], cond.shape)
+        for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
             t_next_batch = torch.ones(cond.shape[0], device=self.device) * (t + self.step_size)
             
@@ -116,8 +103,9 @@ class MidpointSampler(BaseSampler):
     @torch.no_grad()
     def sample(self, cond: torch.Tensor) -> torch.Tensor:
 
-        x = torch.randn_like(cond, device=self.device) 
-        for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step"):
+        # x = torch.randn_like(cond, device=self.device) 
+        x = self._get_x0(cond.shape[0], cond.shape)
+        for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
             t_mid_batch = torch.ones(cond.shape[0], device=self.device) * (t + (self.step_size / 2))
             
@@ -141,8 +129,9 @@ class RK4Sampler(BaseSampler):
     @torch.no_grad()
     def sample(self, cond: torch.Tensor) -> torch.Tensor:
 
-        x = torch.randn_like(cond, device=self.device)
-        for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step"):
+        # x = torch.randn_like(cond, device=self.device)
+        x = self._get_x0(cond.shape[0], cond.shape)
+        for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
             t_mid_batch = torch.ones(cond.shape[0], device=self.device) * (t + (self.step_size / 2))
             t_next_batch = torch.ones(cond.shape[0], device=self.device) * (t + self.step_size)
