@@ -6,10 +6,10 @@ from tqdm import tqdm
 from logging import getLogger
 from contextlib import nullcontext
 from abc import ABC, abstractmethod, ABCMeta
+from diffusers.schedulers import DDIMScheduler
 
 from ..utils import get_hp_dtype, get_device
 logger = getLogger(__name__)
-
 
 class BaseSampler(ABC):
     def __init__(self, config: Dict[str, Any], model: nn.Module) -> None:
@@ -164,6 +164,36 @@ class RK4Sampler(BaseSampler):
         return x
 
 
+class DDIMSampler(BaseSampler):
+    
+    # DDIM sampler using Diffusers' implementation
+    def __init__(self, config: Dict[str, Any], model: nn.Module) -> None:
+        super().__init__(config, model)
+        self.scheduler = DDIMScheduler()
+        self.scheduler.set_timesteps(self.num_timesteps)
+    
+    @torch.no_grad()
+    def sample(self, cond: torch.Tensor) -> torch.Tensor:
+        
+        x = self._get_x0(cond.shape[0], cond.shape)
+        
+        # Ensure timesteps are on the correct device for the loop
+        timesteps = self.scheduler.timesteps.to(self.device)
+
+        for t in tqdm(timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
+            t_batch = t.expand(cond.shape[0]).to(self.device).long()
+            
+            model_input = torch.cat((x, cond), dim=1)
+            with self.autocast_context:
+                noise_pred = self.model(model_input, t_batch)
+            
+            # DDIM step
+            prev_x = self.scheduler.step(noise_pred, t, x).prev_sample
+            x = prev_x
+        
+        return x
+
+
 
 def get_sampler(config: Dict[str, Any], model: nn.Module) -> BaseSampler:
     sampler_type = config.get('sampling', {}).get('solver', 'euler').lower()
@@ -180,6 +210,9 @@ def get_sampler(config: Dict[str, Any], model: nn.Module) -> BaseSampler:
     elif sampler_type == 'rk4':
         logger.info("Using RK4 solver.")
         sampler = RK4Sampler(config, model)
+    elif sampler_type == 'ddim':
+        logger.info("Using DDIM solver.")
+        sampler = DDIMSampler(config, model)
     else:
         raise ValueError(f"Unsupported sampler type: {sampler_type}")
     

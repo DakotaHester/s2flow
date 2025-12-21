@@ -108,7 +108,7 @@ def main():
 
 
 def train_sr_model(config: Dict[str, Any], logger: logging.Logger):
-    from .engine.training import FlowMatchingSRTrainer
+    
     from .engine.eval import sr_model_evaluation
     from .models import get_sr_model
     from .utils import get_device
@@ -120,13 +120,21 @@ def train_sr_model(config: Dict[str, Any], logger: logging.Logger):
         model.load_state_dict(torch.load(pretrained_weights, map_location=get_device(), weights_only=True))
         logger.info("Pretrained weights loaded successfully.")
     
+    sampler = config.get('sampling', {}).get('solver', None)
+    if sampler.lower() == 'ddim':
+        from .engine.training import DDIMSRTrainer
+        trainer_class = DDIMSRTrainer
+    else: # default to FlowMatchingSRTrainer
+        from .engine.training import FlowMatchingSRTrainer
+        trainer_class = FlowMatchingSRTrainer
+    
     load_checkpoint = config.get('job', {}).get('load_checkpoint', False)
     if load_checkpoint:
         logger.info("`load_checkpoint` is True; loading trainer from checkpoint...")
-        trainer = FlowMatchingSRTrainer.from_checkpoint(config, model)
+        trainer = trainer_class.from_checkpoint(config, model)
     else:
         logger.info("`load_checkpoint` is False; initializing new trainer...")
-        trainer = FlowMatchingSRTrainer(config, model)
+        trainer = trainer_class(config, model)
     
     logger.info("Setting up data loaders...")
     train_loader, val_loader = get_dataloaders(config)

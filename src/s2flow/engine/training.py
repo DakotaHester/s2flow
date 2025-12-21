@@ -8,11 +8,10 @@ import torch.nn.functional as F
 from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 import torchmetrics.functional as TMF
+from diffusers.schedulers import DDIMScheduler
 from tqdm import tqdm
 from functools import partial
 from abc import ABC, abstractmethod
-# from segmentation_models_pytorch.losses.focal import focal_loss_with_logits
-from segmentation_models_pytorch.losses import DiceLoss
 from ..loss import focal_loss
 from ..metrics import MultispectralLPIPS, MetricsTracker
 from ..utils import get_device, get_hp_dtype
@@ -262,13 +261,14 @@ class BaseTrainer(ABC):
         self.metrics_tracker.save_to_csv(self.log_path)
 
 
-class FlowMatchingSRTrainer(BaseTrainer):
-    """Trainer for super-resolution using flow matching."""
+class SRTrainer(BaseTrainer):
+    
+    """Trainer for super-resolution tasks."""
     
     def _init_task_specific(self):
         self.loss_name = 'l1_loss'
         self.lpips_metric = MultispectralLPIPS(self.config)
-        logger.debug("FlowMatchingSRTrainer initialized. Loss: l1_loss.")
+        logger.debug("SRTrainer initialized. Loss: l1_loss.")
     
     def _get_metric_functions(self) -> Dict[str, Callable]:
         return {
@@ -277,7 +277,38 @@ class FlowMatchingSRTrainer(BaseTrainer):
             'mssim': partial(TMF.image.multiscale_structural_similarity_index_measure, data_range=(-1, 1), reduction='none'),
             'lpips': self.lpips_metric,
         }
+
+
+class DDIMSRTrainer(SRTrainer):
     
+    def _init_task_specific(self):
+        super()._init_task_specific() # init base SRTrainer specifics
+        self.scheduler = DDIMScheduler() # no need to adjust defaults for now
+    
+    def _compute_loss_and_predictions(self, batch_data) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        input_img, target_img = map(lambda x: x.to(self.device), batch_data)
+        logger.debug(f"Input shape: {input_img.shape}, Target shape: {target_img.shape}")
+        
+        noise = torch.randn_like(target_img)
+        t = torch.randint(0, self.scheduler.num_train_timesteps, (input_img.size(0)), device=self.device).long()
+        noisy_imgs = self.scheduler.add_noise(target_img, noise, t)
+        model_input = torch.cat([noisy_imgs, input_img], dim=1)
+        
+        with autocast(device_type=self.device.type, dtype=self.hp_dtype, enabled=self.use_amp):
+            pred_noise = self.model(model_input, t)
+            loss = F.l1_loss(pred_noise, noise, reduction='none').mean(dim=(1, 2, 3))
+            if logger.isEnabledFor(logging.DEBUG):
+                 logger.debug(f"Loss computed. Mean: {loss.mean().item():.4f}, Min: {loss.min().item():.4f}, Max: {loss.max().item():.4f}")
+        
+        # Reconstruct x_0 (clean image) from x_t and predicted noise
+        # Formula: x_0 = (x_t - sqrt(1 - alpha_bar) * epsilon) / sqrt(alpha_bar)
+        alpha_bar = self.scheduler.alphas_cumprod.to(self.device)[t].view(-1, 1, 1, 1)
+        pred_image = (noisy_imgs - (1 - alpha_bar).sqrt() * pred_noise) / alpha_bar.sqrt()
+        pred_image = pred_image.clamp(-1.0, 1.0)
+        return loss, pred_image, target_img
+
+class FlowMatchingSRTrainer(SRTrainer):
+
     def _compute_loss_and_predictions(self, batch_data) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         input_img, target_img = map(lambda x: x.to(self.device), batch_data)
         logger.debug(f"Input shape: {input_img.shape}, Target shape: {target_img.shape}")
