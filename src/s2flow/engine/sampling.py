@@ -6,7 +6,7 @@ from tqdm import tqdm
 from logging import getLogger
 from contextlib import nullcontext
 from abc import ABC, abstractmethod, ABCMeta
-from diffusers.schedulers import DDIMScheduler
+from diffusers.schedulers import DDIMScheduler, DDPMScheduler
 
 from ..utils import get_hp_dtype, get_device
 logger = getLogger(__name__)
@@ -27,7 +27,7 @@ class BaseSampler(ABC):
             logger.debug("AMP disable; using full precision (float32).")
             self.autocast_context = nullcontext()
         
-        self.num_timesteps = config.get('sampling', {}).get('num_steps', 50.0)
+        self.num_timesteps = config.get('sampling', {}).get('num_steps', 50)
         if self.num_timesteps > 0:
             self.step_size = 1 / self.num_timesteps
             self.timesteps = torch.linspace(0.0, 1 - self.step_size, self.num_timesteps, device=self.device)
@@ -176,11 +176,8 @@ class DDIMSampler(BaseSampler):
     def sample(self, cond: torch.Tensor) -> torch.Tensor:
         
         x = self._get_x0(cond.shape[0], cond.shape)
-        
-        # Ensure timesteps are on the correct device for the loop
-        timesteps = self.scheduler.timesteps.to(self.device)
 
-        for t in tqdm(timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
+        for t in tqdm(self.scheduler.timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
             t_batch = t.expand(cond.shape[0]).to(self.device).long()
             
             model_input = torch.cat((x, cond), dim=1)
@@ -188,8 +185,33 @@ class DDIMSampler(BaseSampler):
                 noise_pred = self.model(model_input, t_batch)
             
             # DDIM step
-            prev_x = self.scheduler.step(noise_pred, t, x).prev_sample
-            x = prev_x
+            x = self.scheduler.step(noise_pred, t, x).prev_sample
+        
+        return x
+
+
+
+class DDPMSampler(BaseSampler):
+    
+    def __init__(self, config: Dict[str, Any], model: nn.Module) -> None:
+        super().__init__(config, model)
+        self.scheduler = DDPMScheduler()
+        self.scheduler.set_timesteps(self.num_timesteps)
+    
+    @torch.no_grad()
+    def sample(self, cond: torch.Tensor) -> torch.Tensor:
+        
+        x = self._get_x0(cond.shape[0], cond.shape)
+
+        for t in tqdm(self.scheduler.timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
+            t_batch = t.expand(cond.shape[0]).to(self.device).long()
+            
+            model_input = torch.cat((x, cond), dim=1)
+            with self.autocast_context:
+                noise_pred = self.model(model_input, t_batch)
+            
+            # DDPM step
+            x = self.scheduler.step(noise_pred, t, x).prev_sample
         
         return x
 
@@ -213,6 +235,9 @@ def get_sampler(config: Dict[str, Any], model: nn.Module) -> BaseSampler:
     elif sampler_type == 'ddim':
         logger.info("Using DDIM solver.")
         sampler = DDIMSampler(config, model)
+    elif sampler_type == 'ddpm':
+        logger.info("Using DDPM solver.")
+        sampler = DDPMSampler(config, model)
     else:
         raise ValueError(f"Unsupported sampler type: {sampler_type}")
     

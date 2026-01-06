@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 import torchmetrics.functional as TMF
-from diffusers.schedulers import DDIMScheduler
+from diffusers.schedulers import DDPMScheduler, DDIMScheduler
 from tqdm import tqdm
 from functools import partial
 from abc import ABC, abstractmethod
@@ -279,18 +279,18 @@ class SRTrainer(BaseTrainer):
         }
 
 
-class DDIMSRTrainer(SRTrainer):
+class DDPMSRTrainer(SRTrainer):
     
     def _init_task_specific(self):
-        super()._init_task_specific() # init base SRTrainer specifics
-        self.scheduler = DDIMScheduler() # no need to adjust defaults for now
+        super()._init_task_specific()
+        self.scheduler = DDPMScheduler()
     
     def _compute_loss_and_predictions(self, batch_data) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         input_img, target_img = map(lambda x: x.to(self.device), batch_data)
         logger.debug(f"Input shape: {input_img.shape}, Target shape: {target_img.shape}")
         
         noise = torch.randn_like(target_img)
-        t = torch.randint(0, self.scheduler.num_train_timesteps, (input_img.size(0)), device=self.device).long()
+        t = torch.randint(0, self.scheduler.config.num_train_timesteps, (input_img.size(0),), device=self.device).long()
         noisy_imgs = self.scheduler.add_noise(target_img, noise, t)
         model_input = torch.cat([noisy_imgs, input_img], dim=1)
         
@@ -306,6 +306,7 @@ class DDIMSRTrainer(SRTrainer):
         pred_image = (noisy_imgs - (1 - alpha_bar).sqrt() * pred_noise) / alpha_bar.sqrt()
         pred_image = pred_image.clamp(-1.0, 1.0)
         return loss, pred_image, target_img
+
 
 class FlowMatchingSRTrainer(SRTrainer):
 

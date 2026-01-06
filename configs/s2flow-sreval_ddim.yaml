@@ -1,10 +1,8 @@
 job:
-  name: s2flow_sr_train
-  type: sr_train
-  log_dir: ./logs
-  out_dir: ./runs
-  load_checkpoint: True
-  checkpoint_filename: checkpoint.pt
+  name: s2flow_sr_eval_ddpm_100
+  type: sr_eval
+  log_dir: ./logs/s2flow_sr_eval_steps/
+  out_dir: ./runs/s2flow_sr_eval_steps/
   cudnn_deterministic: False # set to False for faster training
 
 sr_model:
@@ -18,7 +16,7 @@ sr_model:
   layers_per_block: 2
   norm_num_groups: 32
   time_embedding_type: positional
-  pretrained_weights: null # if eval/inference, need to specify path to pretrained weights
+  pretrained_weights: 'runs/s2flow_sr_train_ddpm/model.pt'
 
 data:
   samples_par_path: ./data/s2flow-s2naip/samples.par
@@ -28,13 +26,7 @@ data:
   pin_memory: True
   
 hyperparameters:
-  learning_rate: 0.0001
-  batch_size: 32
-  micro_batch_size: 16 # set to 1024 for PCA computation
-  num_epochs: 100
-  warmup_epochs: 10 # just a test for now
-  weight_decay: 0.01
-  use_amp: True
+  micro_batch_size: 64 # set to 1024 for PCA computation
 
 metrics:
   pca_lpips_clamp: True
@@ -42,4 +34,4 @@ metrics:
 
 sampling:
   num_steps: 100
-  solver: ddim
+  solver: ddpm

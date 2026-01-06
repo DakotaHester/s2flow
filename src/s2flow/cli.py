@@ -120,10 +120,10 @@ def train_sr_model(config: Dict[str, Any], logger: logging.Logger):
         model.load_state_dict(torch.load(pretrained_weights, map_location=get_device(), weights_only=True))
         logger.info("Pretrained weights loaded successfully.")
     
-    sampler = config.get('sampling', {}).get('solver', None)
-    if sampler.lower() == 'ddim':
-        from .engine.training import DDIMSRTrainer
-        trainer_class = DDIMSRTrainer
+    sampler = config.get('sampling', {}).get('solver', 'euler').lower()
+    if sampler == 'ddpm':
+        from .engine.training import DDPMSRTrainer
+        trainer_class = DDPMSRTrainer
     else: # default to FlowMatchingSRTrainer
         from .engine.training import FlowMatchingSRTrainer
         trainer_class = FlowMatchingSRTrainer
