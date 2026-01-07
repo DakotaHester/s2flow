@@ -7,7 +7,8 @@ def main() -> None:
     slurm_config = SlurmConfig()
     sweep = SREvalSweep(
         base_config_path='./configs/s2flow-sampling_sweep.yaml',
-        solvers=['euler', 'heun', 'midpoint', 'rk4'],
+        # solvers=['euler', 'heun', 'midpoint', 'rk4'],
+        solvers=['ddpm', 'ddim'],
         num_steps_range=(1, 100, 5),
         slurm_config=slurm_config,
     )
