@@ -1,5 +1,5 @@
 job:
-  name: s2flow_sr_inf_ddpm_1
+  name: s2flow_sr_inf_ddpm
   type: sr_inference
   log_dir: ./logs/
   out_dir: ./runs/
@@ -17,7 +17,7 @@ sr_model:
   norm_num_groups: 32
   time_embedding_type: positional
   # pretrained_weights: 'runs/s2flow_sr_train/model.pt' # Necessary for inference
-  pretrained_weights: 'runs/s2flow_sr_train_ddpm/model.pt'
+  pretrained_weights: 'runs/s2flow_sr_train_ddpm/model.pt' # Necessary for inference
 
 # A note on simple inference: for simplicity we assume that the input pdata
 # has already been resampled to the desired resolution. The reason for this is
@@ -26,11 +26,11 @@ sr_model:
 data:
   data_root_path: ./data/cpb_lc/sentinel2
   glob_pattern: '*.tif'
-  out_root_path: ./data/cpb_lc/ddpm/sentinel2_sr_steps_100
+  out_root_path: ./data/cpb_lc/ddpm/sentinel2_sr_steps_30
   
 hyperparameters:
   micro_batch_size: 64
 
 sampling:
-  num_steps: 100
+  num_steps: 30
   solver: ddpm
