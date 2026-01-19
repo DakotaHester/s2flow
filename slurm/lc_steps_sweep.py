@@ -31,7 +31,7 @@ class LCStepSweepJob(BaseJob):
         # 1. Update Job Name for internal logging
         # The config has "s2flow_lc_model_sweep_<NUM_STEPS>", we make it specific
         if 'job' in self.base_config:
-            self.base_config['job']['name'] = f"s2flow_lc_{model}_steps{steps}_fold{fold}"
+            self.base_config['job']['name'] = f"s2flow_lc_{model}_steps{steps}_fold{fold}_ddim"
 
         # 2. Update Model Params
         if 'lc_model' not in self.base_config:
@@ -44,7 +44,7 @@ class LCStepSweepJob(BaseJob):
         
         # Construct the specific paths requested:
         # ./data/cpb_lc_var_steps/cpb_lc_<NUM_STEPS>/samples.par
-        base_data_root = "./data/cpb_lc_var_steps"
+        base_data_root = "./data/cpb_lc_var_steps/cpb_lc_var_steps_ddim"
         step_dir = f"cpb_lc_{steps}"
         
         self.base_config['data']['samples_par_path'] = f"{base_data_root}/{step_dir}/samples.par"
