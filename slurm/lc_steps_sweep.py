@@ -90,7 +90,7 @@ class LCStepSweep(BaseSweep):
     ):
         super().__init__(
             base_config_path=base_config_path,
-            sweep_name="s2flow_lc_sampling_steps_sweep",
+            sweep_name="s2flow_lc_sampling_steps_sweep_ddim",
             timestamp=timestamp,
             slurm_config=slurm_config,
             hostname_check=hostname_check,
