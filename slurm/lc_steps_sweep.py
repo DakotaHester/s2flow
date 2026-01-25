@@ -13,6 +13,7 @@ def main() -> None:
         num_steps=[1, 10, 20, 30, 40, 50],
         folds=[0, 1, 2, 3, 4],
         slurm_config=slurm_config,
+        timestamp='20260119_120642'
     )
     
     sweep.run()
