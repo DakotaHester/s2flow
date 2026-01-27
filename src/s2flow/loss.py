@@ -1,7 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision.models import vgg19, VGG19_Weights
 from typing import Optional, Union, List, Literal
+
+from .data.pca import PCAConvLayer
+from .utils import get_device
 
 def focal_loss(
     y_pred: torch.Tensor,
@@ -153,3 +157,57 @@ class FocalLoss(nn.Module):
         )
 
 
+class MultispectralPerceptualLoss(nn.Module):
+    """
+    Perceptual loss wrapper that projects multispectral input (e.g., 4-band) 
+    to 3-band RGB using a PCA layer before computing VGG features.
+    """
+    def __init__(self, config):
+        super(MultispectralPerceptualLoss, self).__init__()
+        self.device = get_device()
+        
+        # Initialize PCA Layer for dimensionality reduction (4 -> 3)
+        self.pca_layer = PCAConvLayer(config).to(self.device)
+        self.k = config.get('metrics', {}).get('pca_lpips_k', 3.0)
+        self.clamp = config.get('metrics', {}).get('pca_lpips_clamp', True)
+
+        # Load VGG19 features
+        vgg = vgg19(weights=VGG19_Weights.DEFAULT)
+        self.features = nn.ModuleList(list(vgg.features)).eval()
+        
+        # Layer indices for "conv1_2", "conv2_2", "conv3_4", "conv4_4", "conv5_4"
+        # Adjusted slightly to match standard implementation of "before activation"
+        self.layer_indices = {
+            'conv1': 2, 'conv2': 7, 'conv3': 16, 'conv4': 25, 'conv5': 34
+        }
+        self.weights = {'conv1': 0.1, 'conv2': 0.1, 'conv3': 1.0, 'conv4': 1.0, 'conv5': 1.0}
+
+        # Freeze VGG parameters
+        for param in self.parameters():
+            param.requires_grad = False
+            
+    def forward(self, pred, target):
+        """
+        Args:
+            pred: (B, C_in, H, W)
+            target: (B, C_in, H, W)
+        """
+        # 1. Project to 3-channel using PCA (differentiable)
+        # Note: PCAConvLayer expects standard forward, ensuring gradients flow back to Generator
+        x_feat = self.pca_layer(pred, k=self.k, clamp=self.clamp)
+        y_feat = self.pca_layer(target, k=self.k, clamp=self.clamp)
+        
+        loss = 0
+        current_layer = 0
+        for name, index in sorted(self.layer_indices.items(), key=lambda item: item[1]):
+            for i in range(current_layer, index):
+                x_feat = self.features[i](x_feat)
+                y_feat = self.features[i](y_feat)
+            
+            x_feat = self.features[index](x_feat)
+            y_feat = self.features[index](y_feat)
+            
+            loss += self.weights[name] * F.l1_loss(x_feat, y_feat)
+            current_layer = index + 1
+            
+        return loss

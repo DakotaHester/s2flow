@@ -1,8 +1,16 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from math import log2
 
-from typing import Literal
+from typing import Any, Dict, Literal
 
+
+def make_layer(block, n_layers):
+    layers = []
+    for _ in range(n_layers):
+        layers.append(block())
+    return nn.Sequential(*layers)
 
 class ConvBlock(nn.Module):
     
@@ -163,3 +171,167 @@ class DeepLabV3Plus(nn.Module):
         # Final upsample to input resolution
         x = nn.functional.interpolate(x, size=x.shape[-2]*4, mode="bilinear", align_corners=False)
         return self.activation(x)
+
+
+
+class RRDBNet(nn.Module):
+    """
+    The Generator for Real-ESRGAN.
+    Structure: Conv -> RRDB Body -> Conv -> Upsample (Nearest+Conv) -> Conv -> Output
+    """
+    def __init__(self, model_conf: Dict[str, Any]):
+        super(RRDBNet, self).__init__()
+        in_channels = model_conf.get('in_channels', 4) 
+        out_channels = model_conf.get('out_channels', 4)
+        num_feat = model_conf.get('num_feat', 64)
+        num_block = model_conf.get('num_block', 23)
+        num_growth = model_conf.get('num_growth', 32)
+        scale = model_conf.get('scale', 4)
+
+        # 1. First convolution
+        self.conv_first = nn.Conv2d(in_channels, num_feat, 3, 1, 1)
+
+        # 2. Main Body (RRDB blocks)
+        self.body = make_layer(lambda: RRDB(num_feat, num_growth), num_block)
+        
+        self.conv_body = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+
+        # 3. Upsampling
+        # Real-ESRGAN/ESRGAN uses Nearest Neighbor + Conv, NOT PixelShuffle
+        upsample_layers = []
+        num_upsamples = int(log2(scale))
+        for _ in range(num_upsamples):
+            upsample_layers += [
+                nn.Upsample(scale_factor=2, mode='nearest'),
+                nn.Conv2d(num_feat, num_feat, 3, 1, 1),
+                nn.LeakyReLU(negative_slope=0.2, inplace=True)
+            ]
+        self.upsample = nn.Sequential(*upsample_layers)
+        
+        # 4. Final convolution
+        self.conv_last_1 = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+        self.conv_last_2 = nn.Conv2d(num_feat, out_channels, 3, 1, 1)
+        self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+
+    def forward(self, x):
+        feat = self.conv_first(x)
+        body_feat = self.conv_body(self.body(feat))
+        feat = feat + body_feat
+        feat = self.upsample(feat)
+        feat = self.conv_last_1(feat)
+        feat = self.lrelu(feat)
+        out = self.conv_last_2(feat)
+        
+        return out
+
+
+class UNetDiscriminatorSN(nn.Module):
+    """
+    U-Net Discriminator with Spectral Normalization.
+    Specific to Real-ESRGAN to provide pixel-wise loss gradients.
+    """
+    def __init__(self, config):
+        super(UNetDiscriminatorSN, self).__init__()
+        disc_conf = config.get('discriminator_model', {})
+        in_channels = disc_conf.get('in_channels', 4)
+        num_feat = disc_conf.get('num_feat', 64)
+        self.skip_connection = disc_conf.get('skip_connection', True)
+        
+        norm = nn.utils.spectral_norm
+
+        self.conv0 = norm(nn.Conv2d(in_channels, num_feat, 3, 1, 1))
+
+        # Downsample
+        self.conv1 = norm(nn.Conv2d(num_feat, num_feat * 2, 4, 2, 1, bias=False))
+        self.conv2 = norm(nn.Conv2d(num_feat * 2, num_feat * 4, 4, 2, 1, bias=False))
+        self.conv3 = norm(nn.Conv2d(num_feat * 4, num_feat * 8, 4, 2, 1, bias=False))
+
+        # Upsample
+        self.conv4 = norm(nn.Conv2d(num_feat * 8, num_feat * 4, 3, 1, 1, bias=False))
+        self.conv5 = norm(nn.Conv2d(num_feat * 4, num_feat * 2, 3, 1, 1, bias=False))
+        self.conv6 = norm(nn.Conv2d(num_feat * 2, num_feat, 3, 1, 1, bias=False))
+
+        # Output
+        self.conv7 = norm(nn.Conv2d(num_feat, num_feat, 3, 1, 1, bias=False))
+        self.conv8 = norm(nn.Conv2d(num_feat, num_feat, 3, 1, 1, bias=False))
+        self.conv9 = nn.Conv2d(num_feat, 1, 3, 1, 1)
+
+    def forward(self, x):
+        x0 = F.leaky_relu(self.conv0(x), negative_slope=0.2, inplace=True)
+
+        # Down
+        x1 = F.leaky_relu(self.conv1(x0), negative_slope=0.2, inplace=True)
+        x2 = F.leaky_relu(self.conv2(x1), negative_slope=0.2, inplace=True)
+        x3 = F.leaky_relu(self.conv3(x2), negative_slope=0.2, inplace=True)
+
+        # Up (Using Interpolation + Conv for stability)
+        x3_up = F.interpolate(x3, scale_factor=2, mode='bilinear', align_corners=False)
+        x4 = F.leaky_relu(self.conv4(x3_up), negative_slope=0.2, inplace=True)
+        if self.skip_connection: x4 = x4 + x2
+
+        x4_up = F.interpolate(x4, scale_factor=2, mode='bilinear', align_corners=False)
+        x5 = F.leaky_relu(self.conv5(x4_up), negative_slope=0.2, inplace=True)
+        if self.skip_connection: x5 = x5 + x1
+
+        x5_up = F.interpolate(x5, scale_factor=2, mode='bilinear', align_corners=False)
+        x6 = F.leaky_relu(self.conv6(x5_up), negative_slope=0.2, inplace=True)
+        if self.skip_connection: x6 = x6 + x0
+
+        # Refinement & Output
+        out = self.conv7(x6)
+        out = F.leaky_relu(out, negative_slope=0.2, inplace=True)
+        out = self.conv8(out)
+        out = F.leaky_relu(out, negative_slope=0.2, inplace=True)
+        out = self.conv9(out)
+        
+        return out
+
+class ResidualDenseBlock_RRDB(nn.Module):
+    """
+    Residual Dense Block (RDB) for RRDB.
+    Standard Real-ESRGAN/ESRGAN configuration.
+    """
+    def __init__(self, num_feat=64, num_growth=32):
+        super(ResidualDenseBlock_RRDB, self).__init__()
+        self.conv1 = nn.Conv2d(num_feat, num_growth, 3, 1, 1)
+        self.conv2 = nn.Conv2d(num_feat + num_growth, num_growth, 3, 1, 1)
+        self.conv3 = nn.Conv2d(num_feat + 2 * num_growth, num_growth, 3, 1, 1)
+        self.conv4 = nn.Conv2d(num_feat + 3 * num_growth, num_growth, 3, 1, 1)
+        self.conv5 = nn.Conv2d(num_feat + 4 * num_growth, num_feat, 3, 1, 1)
+        self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+
+        # Initialization (Kaiming)
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight)
+                m.weight.data *= 0.1
+                if m.bias is not None:
+                    m.bias.data.zero_()
+
+    def forward(self, x):
+        x1 = self.lrelu(self.conv1(x))
+        x2 = self.lrelu(self.conv2(torch.cat((x, x1), 1)))
+        x3 = self.lrelu(self.conv3(torch.cat((x, x1, x2), 1)))
+        x4 = self.lrelu(self.conv4(torch.cat((x, x1, x2, x3), 1)))
+        x5 = self.conv5(torch.cat((x, x1, x2, x3, x4), 1))
+        # Residual scaling 0.2 (Critical for convergence in deep networks)
+        return x5 * 0.2 + x
+
+
+class RRDB(nn.Module):
+    """
+    Residual in Residual Dense Block (RRDB).
+    """
+    def __init__(self, num_feat, num_growth=32):
+        super(RRDB, self).__init__()
+        self.rdb1 = ResidualDenseBlock_RRDB(num_feat, num_growth)
+        self.rdb2 = ResidualDenseBlock_RRDB(num_feat, num_growth)
+        self.rdb3 = ResidualDenseBlock_RRDB(num_feat, num_growth)
+
+    def forward(self, x):
+        out = self.rdb1(x)
+        out = self.rdb2(out)
+        out = self.rdb3(out)
+        # Residual scaling 0.2
+        return out * 0.2 + x
+

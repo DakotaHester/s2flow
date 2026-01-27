@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, Union
 from logging import getLogger
 import json
 from .utils import get_device
+from .modules import RRDBNet
 from segmentation_models_pytorch import Unet, DeepLabV3Plus, Segformer
 
 logger = getLogger(__name__)
@@ -57,8 +58,12 @@ def get_sr_model(config: Dict[str, Any]) -> nn.Module:
         model = UNetTensorWrapper(model_config)
         logger.info("UNet model initialized successfully.")
     
-    elif model_type == 'esrgan':
-        raise NotImplementedError("ESRGAN model type is not yet implemented.")
+    elif model_type == 'rrdbnet':
+        model = RRDBNet(model_config)
+        logger.info("RRDB model initialized successfully.")
+
+    else:
+        raise ValueError(f"Unsupported SR model type: {model_type}")
 
     device = get_device()
     model.to(device)

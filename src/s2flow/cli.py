@@ -120,14 +120,18 @@ def train_sr_model(config: Dict[str, Any], logger: logging.Logger):
         model.load_state_dict(torch.load(pretrained_weights, map_location=get_device(), weights_only=True))
         logger.info("Pretrained weights loaded successfully.")
     
-    sampler = config.get('sampling', {}).get('solver', 'euler').lower()
-    if sampler == 'ddpm':
-        from .engine.training import DDPMSRTrainer
-        trainer_class = DDPMSRTrainer
-    else: # default to FlowMatchingSRTrainer
-        from .engine.training import FlowMatchingSRTrainer
-        trainer_class = FlowMatchingSRTrainer
-    
+    if 'discriminator_model' in config.keys():
+        from .engine.training import RealESRGANTrainer
+        trainer_class = RealESRGANTrainer
+    else:
+        sampler = config.get('sampling', {}).get('solver', 'euler').lower()
+        if sampler == 'ddpm':
+            from .engine.training import DDPMSRTrainer
+            trainer_class = DDPMSRTrainer
+        else: # default to FlowMatchingSRTrainer
+            from .engine.training import FlowMatchingSRTrainer
+            trainer_class = FlowMatchingSRTrainer
+
     load_checkpoint = config.get('job', {}).get('load_checkpoint', False)
     if load_checkpoint:
         logger.info("`load_checkpoint` is True; loading trainer from checkpoint...")

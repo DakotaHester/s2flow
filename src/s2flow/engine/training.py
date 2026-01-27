@@ -12,9 +12,10 @@ from diffusers.schedulers import DDPMScheduler, DDIMScheduler
 from tqdm import tqdm
 from functools import partial
 from abc import ABC, abstractmethod
-from ..loss import focal_loss
+from ..loss import focal_loss, MultispectralPerceptualLoss
 from ..metrics import MultispectralLPIPS, MetricsTracker
 from ..utils import get_device, get_hp_dtype
+from ..modules import UNetDiscriminatorSN
 
 logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
@@ -392,7 +393,237 @@ class LandCoverTrainer(BaseTrainer):
         
         return loss, y_pred, y
     
+
+class RealESRGANTrainer(SRTrainer):
+    """
+    Trainer for Real-ESRGAN.
+    Architecture: RRDBNet (G) + UNetDiscriminatorSN (D).
+    Losses: L1 + Perceptual + GAN (BCE/Logits).
+    """
+    def _init_task_specific(self):
+        # 1. Initialize Discriminator (U-Net with Spectral Norm)
+        self.discriminator = UNetDiscriminatorSN(self.config).to(self.device)
+        logger.debug("Initialized UNetDiscriminatorSN.")
+
+        # 2. Losses
+        self.cri_pix = nn.L1Loss().to(self.device)
+        self.cri_perceptual = MultispectralPerceptualLoss(self.config).to(self.device)
+        self.cri_gan = nn.BCEWithLogitsLoss().to(self.device)
+        self.lpips_metric = MultispectralLPIPS(self.config)
+        
+        # Real-ESRGAN Paper Weights
+        self.loss_weights = self.config.get('loss_weights', {
+            'pix': 1.0, 
+            'percep': 1.0, 
+            'gan': 0.1
+        })
+
+        # 3. Optimizers
+        hp = self.config.get('hyperparameters', {})
+        lr_g = hp.get('learning_rate_generator', 1e-4)
+        lr_d = hp.get('learning_rate_discriminator', 1e-4)
+        
+        # Generator Optimizer (alias self.optimizer from BaseTrainer)
+        self.optimizer_G = self.optimizer 
+        for param_group in self.optimizer_G.param_groups:
+            param_group['lr'] = lr_g
+            # CRITICAL FIX: Remove the 'initial_lr' key left by the BaseTrainer's scheduler
+            # This forces the new scheduler to capture the new 'lr' as the baseline.
+            if 'initial_lr' in param_group:
+                del param_group['initial_lr']
+            
+        # Discriminator Optimizer
+        self.optimizer_D = torch.optim.AdamW(
+            self.discriminator.parameters(), lr=lr_d, weight_decay=hp.get('weight_decay', 0)
+        )
+        
+        # 4. Schedulers (Warmup + Cosine for BOTH)
+        self.scheduler_G = self._create_scheduler_for_optimizer(self.optimizer_G)
+        self.scheduler_D = self._create_scheduler_for_optimizer(self.optimizer_D)        
+        
+        self.loss_name = 'generator_loss'
+        
+        # Initialize gradients to zero to start accumulation correctly
+        self.optimizer_G.zero_grad(set_to_none=True)
+        self.optimizer_D.zero_grad(set_to_none=True)
+
+    def _create_scheduler_for_optimizer(self, optimizer):
+        """Helper to create Warmup + Cosine scheduler for any optimizer."""
+        cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=self.num_epochs - self.warmup_epochs
+        )
+        if self.warmup_epochs > 0:
+            warmup = torch.optim.lr_scheduler.LinearLR(
+                optimizer, start_factor=0.1, end_factor=1.0, total_iters=self.warmup_epochs - 1
+            )
+            return torch.optim.lr_scheduler.SequentialLR(
+                optimizer, schedulers=[warmup, cosine], milestones=[self.warmup_epochs]
+            )
+        return cosine
+
+    def fit(self, train_dataloader, val_dataloader=None):
+        logger.info(f"Starting Real-ESRGAN training.")
+        for epoch in range(self.current_epoch, self.num_epochs + 1):
+            self.current_epoch = epoch
+            self.metrics_tracker.reset_epoch()
+            
+            # Get current LRs for logging
+            lr_g = self.optimizer_G.param_groups[0]['lr']
+            # lr_d = self.optimizer_D.param_groups[0]['lr']
+            self.metrics_tracker.update_epoch(epoch, lr_g) # Log G LR primarily (discriminator LR should be the same)
+            
+            self._run_phase('train', train_dataloader)
+            if val_dataloader:
+                self._run_phase('val', val_dataloader)
+                
+            self.metrics_tracker.finalize_epoch()
+            self.scheduler_G.step()
+            self.scheduler_D.step()
+            self.save_checkpoint()
+            self.save_metrics()
+            self.save_model()
+
+    def _run_phase(self, phase: str, dataloader: DataLoader):
+        is_train = phase == 'train'
+        if is_train:
+            self.model.train()
+            self.discriminator.train()
+            torch.set_grad_enabled(True)
+        else:
+            self.model.eval()
+            self.discriminator.eval()
+            torch.set_grad_enabled(False)
+        
+        self.optimizer_G.zero_grad(set_to_none=True)
+        self.optimizer_D.zero_grad(set_to_none=True)
+        
+        with tqdm(dataloader, desc=f"{phase.capitalize()} Epoch {self.current_epoch}", unit="bt") as pbar:
+            for i, batch in enumerate(pbar):
+                x, y = map(lambda x: x.to(self.device), batch)
+                
+                # downsample x back down to original size (if needed, e.g., 256->64)
+                # Ensure this matches your data pipeline expectations
+                x = F.interpolate(x, scale_factor=0.25, mode='bilinear', align_corners=False)
+                
+                # discriminator training
+                for p in self.discriminator.parameters(): p.requires_grad = True
+                
+                with autocast(device_type=self.device.type, dtype=self.hp_dtype, enabled=self.use_amp):
+                    y_hat = self.model(x)
+                    
+                    # D Loss: Real
+                    d_real = self.discriminator(y)
+                    loss_real = self.cri_gan(d_real, torch.ones_like(d_real))
+                    
+                    # D Loss: Fake
+                    d_fake = self.discriminator(y_hat.detach())
+                    loss_fake = self.cri_gan(d_fake, torch.zeros_like(d_fake))
+                    
+                    loss_d = (loss_real + loss_fake) * 0.5
+
+                if is_train:
+                    self._backward_step_gan(loss_d, self.optimizer_D, i)
+
+                # generator training
+                for p in self.discriminator.parameters(): p.requires_grad = False
+                
+                with autocast(device_type=self.device.type, dtype=self.hp_dtype, enabled=self.use_amp):
+                    # Re-run Discriminator on fake (to recover graph for G)
+                    pred_g_fake = self.discriminator(y_hat)
+                    
+                    # GAN Loss
+                    l_g_gan = self.loss_weights['gan'] * self.cri_gan(pred_g_fake, torch.ones_like(pred_g_fake))
+                    
+                    # Pixel Loss
+                    l_g_pix = self.loss_weights['pix'] * self.cri_pix(y_hat, y)
+                    
+                    # Perceptual Loss (Multispectral)
+                    l_g_percep = self.loss_weights['percep'] * self.cri_perceptual(y_hat, y)
+                    
+                    loss_g = l_g_pix + l_g_percep + l_g_gan
+
+                if is_train:
+                    self._backward_step_gan(loss_g, self.optimizer_G, i)
+
+                # Metrics
+                batch_metrics = self.metrics_tracker.update_batch(
+                    phase, loss_g.detach(), y_hat.detach(), y,
+                    additional_metrics={
+                        'discriminator_loss': loss_d.detach().item(),
+                        'pixel_loss': l_g_pix.detach().item(),
+                        'perceptual_loss': l_g_percep.detach().item(),
+                        'gan_loss': l_g_gan.detach().item(),
+                    }
+                )
+                
+                pbar.set_postfix({
+                    'lr': f'{self.optimizer_G.param_groups[0]["lr"]:.2e}',
+                    **{k: f'{v:.2e}' for k, v in batch_metrics.items() if k in ['psnr', 'lpips', 'gan_loss', 'discriminator_loss', 'generator_loss']} # only report key metrics
+                })
+
+    def _backward_step_gan(self, loss: torch.Tensor, optimizer: torch.optim.Optimizer, batch_idx: int):
+        """
+        Handles Gradient Accumulation and Scaler Logic for a specific optimizer.
+        """
+        # 1. Scale loss by accumulation steps
+        scaled_loss = loss / self.grad_accum_steps
+        
+        # 2. Backward (Accumulate gradients)
+        if self.scaler:
+            self.scaler.scale(scaled_loss).backward()
+        else:
+            scaled_loss.backward()
+            
+        # 3. Step (only at accumulation boundaries)
+        if (batch_idx + 1) % self.grad_accum_steps == 0:
+            if self.scaler:
+                self.scaler.step(optimizer)
+                self.scaler.update()
+            else:
+                optimizer.step()
+            
+            # 4. Zero Gradients (only after stepping)
+            optimizer.zero_grad(set_to_none=True)
+
+    def _compute_loss_and_predictions(self, batch_data):
+        raise NotImplementedError("Use _run_phase for GAN training.")
     
+    def save_checkpoint(self):
+        state = {
+            'model': self.model.state_dict(),
+            'discriminator': self.discriminator.state_dict(),
+            'optimizer_G': self.optimizer_G.state_dict(),
+            'optimizer_D': self.optimizer_D.state_dict(),
+            'scheduler_G': self.scheduler_G.state_dict(), # Save G scheduler
+            'scheduler_D': self.scheduler_D.state_dict(), # Save D scheduler
+            'epoch': self.current_epoch,
+            'metrics': self.metrics_tracker.to_dict()
+        }
+        if self.scaler: state['scaler'] = self.scaler.state_dict()
+        torch.save(state, self.checkpoint_path)
+
+    def load_checkpoint(self):
+        if not self.checkpoint_path.exists(): return
+        ckpt = torch.load(self.checkpoint_path, map_location=self.device)
+        self.model.load_state_dict(ckpt['model'])
+        if 'discriminator' in ckpt: self.discriminator.load_state_dict(ckpt['discriminator'])
+        
+        self.optimizer_G.load_state_dict(ckpt['optimizer_G'])
+        if 'optimizer_D' in ckpt: self.optimizer_D.load_state_dict(ckpt['optimizer_D'])
+        
+        # Load Schedulers
+        if 'scheduler_G' in ckpt: # Handle legacy checkpoints
+            self.scheduler_G.load_state_dict(ckpt['scheduler_G'])
+        elif 'scheduler' in ckpt: # Fallback to BaseTrainer key
+            self.scheduler_G.load_state_dict(ckpt['scheduler'])
+            
+        if 'scheduler_D' in ckpt: 
+            self.scheduler_D.load_state_dict(ckpt['scheduler_D'])
+            
+        self.current_epoch = ckpt['epoch'] + 1
+        if self.scaler and 'scaler' in ckpt:
+            self.scaler.load_state_dict(ckpt['scaler'])
+
     
 def train_sr_model(config: Dict[str, Any], model: nn.Module):
     

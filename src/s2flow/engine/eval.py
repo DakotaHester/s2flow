@@ -65,6 +65,7 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
                     
                     with rio.open(input_path) as src:
                         input_image = src.read()
+                        
                     with rio.open(target_path) as src:
                         target_image = src.read()
                         target_profile = src.profile.copy()

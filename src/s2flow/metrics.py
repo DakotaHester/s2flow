@@ -169,7 +169,8 @@ class MetricsTracker:
         phase: str, 
         loss: Optional[torch.Tensor], 
         preds: torch.Tensor, 
-        targets: torch.Tensor
+        targets: torch.Tensor,
+        additional_metrics: Optional[Dict[str, float]] = None
     ) -> Dict[str, float]:
         """
         Computes metrics for a batch. 
@@ -211,6 +212,14 @@ class MetricsTracker:
             except Exception as e:
                 logger.error(f"[{phase}] Error computing metric '{name}': {str(e)}", exc_info=True)
                 batch_metrics[name] = 0.0
+        
+        if additional_metrics:
+            for name, val in additional_metrics.items():
+                key = f'{phase}_{name}'
+                self.running_totals[key] += val * batch_size
+                self.running_counts[key] += batch_size
+                batch_metrics[name] = val
+                logger.debug(f"[{phase}] Additional metric '{name}' recorded: {val:.4f}")
 
         return {k: self.running_totals[f'{phase}_{k}'] / self.running_counts[f'{phase}_{k}'] for k in batch_metrics.keys()}
 

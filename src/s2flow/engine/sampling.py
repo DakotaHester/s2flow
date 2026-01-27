@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import Any, Dict
 from torch.amp import autocast
 from tqdm import tqdm
@@ -18,7 +19,7 @@ class BaseSampler(ABC):
         self.device = get_device()
         self.model.to(self.device)
         
-        self.use_amp = config.get('hyperparameters', None).get('use_amp', True)
+        self.use_amp = config.get('hyperparameters', {}).get('use_amp', True)
         if self.use_amp:
             hp_dtype = get_hp_dtype()
             logger.debug(f"Using AMP with dtype: {hp_dtype}")
@@ -217,7 +218,23 @@ class DDPMSampler(BaseSampler):
 
 
 
+class GANSampler(BaseSampler):
+    @torch.no_grad()
+    def sample(self, cond: torch.Tensor, downsample: bool=True) -> torch.Tensor:
+        
+        if downsample:
+            cond = F.interpolate(cond, scale_factor=0.25, mode='bilinear', align_corners=False)
+        
+        return self.model(cond) # Upscale using ESRGAN
+
+
+
 def get_sampler(config: Dict[str, Any], model: nn.Module) -> BaseSampler:
+    use_gan = config.get('sampling', {}).get('gan', False)
+    if use_gan:
+        logger.info("Using GAN-based super-resolution.")
+        return GANSampler(config, model)
+    
     sampler_type = config.get('sampling', {}).get('solver', 'euler').lower()
     
     if sampler_type == 'euler':
