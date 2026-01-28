@@ -1,5 +1,5 @@
 job:
-  name: s2flow_sr_eval_steps_40
+  name: s2flow_sr_eval_euler_1
   type: sr_eval
   log_dir: ./logs/s2flow_sr_eval_steps/
   out_dir: ./runs/s2flow_sr_eval_steps/
@@ -33,5 +33,5 @@ metrics:
   pca_lpips_k: 3.0
 
 sampling:
-  num_steps: 40
-  solver: midpoint
+  num_steps: 1
+  solver: euler
