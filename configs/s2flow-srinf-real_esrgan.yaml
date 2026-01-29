@@ -1,0 +1,43 @@
+job:
+  name: s2flow_realesrgan_inf
+  type: sr_inference
+  log_dir: ./logs
+  out_dir: ./runs
+  load_checkpoint: False
+
+# data:
+#   samples_par_path: ./data/s2flow-s2naip/samples.par
+#   data_dir_path: ./data/s2flow-s2naip
+#   augmentations: spatial
+#   num_workers: 8
+#   pin_memory: True
+
+# Generator
+sr_model:
+  model_type: rrdbnet
+  in_channels: 4
+  out_channels: 4
+  num_feat: 64
+  num_block: 23
+  num_growth: 32
+  scale: 4
+  pretrained_weights: 'runs/s2flow_realesrgan/model.pt'
+
+# Discriminator 
+# discriminator_model:
+#   model_type: unet_sn
+#   in_channels: 4
+#   num_feat: 64
+#   skip_connection: True
+
+data:
+  data_root_path: ./data/cpb_lc/sentinel2
+  glob_pattern: '*.tif'
+  out_root_path: ./data/cpb_lc/sentinel2_realesrgan
+
+# Hyperparameters (Real-ESRGAN settings)
+hyperparameters: 
+  micro_batch_size: 16
+
+sampling:
+  gan: true
