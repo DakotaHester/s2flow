@@ -10,7 +10,8 @@ def main() -> None:
     sweep = LCStepSweep(
         base_config_path='./configs/s2flow-lc_model_sweep_sampling_steps.yaml',
         models=['segformer', 'deeplabv3plus', 'unet'],
-        num_steps=[1, 10, 20, 30, 40, 50],
+        # num_steps=[1, 10, 20, 30, 40, 50],
+        num_steps=['real_esrgan'],
         folds=[0, 1, 2, 3, 4],
         slurm_config=slurm_config,
         # timestamp='20260119_120642'
@@ -45,7 +46,7 @@ class LCStepSweepJob(BaseJob):
         
         # Construct the specific paths requested:
         # ./data/cpb_lc_var_steps/cpb_lc_<NUM_STEPS>/samples.par
-        base_data_root = "./data/cpb_lc_var_steps/cpb_lc_var_steps_ddpm"
+        base_data_root = "./data/cpb_lc_var_steps"
         step_dir = f"cpb_lc_{steps}"
         
         self.base_config['data']['samples_par_path'] = f"{base_data_root}/{step_dir}/samples.par"
