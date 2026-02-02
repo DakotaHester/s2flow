@@ -21,10 +21,10 @@ class BaseMultispectralMetric(ABC):
         
         self.device = get_device()
         self.pca_layer = PCAConvLayer(config).to(self.device)
-        self.clamp = config.get('metrics', {}).get('pca_lpips_clamp', False)
-        self.k = config.get('metrics', {}).get('pca_lpips_k', 1.0)
+        self.clamp = config.get('metrics', {}).get('pca_lpips_clamp', True)
+        self.k = config.get('metrics', {}).get('pca_lpips_k', 3.0)
         
-        self.use_amp = config.get('hyperparameters', None).get('use_amp', True)
+        self.use_amp = config.get('hyperparameters', {}).get('use_amp', True)
         if self.use_amp:
             hp_dtype = get_hp_dtype()
             logger.debug(f"Using AMP with dtype: {hp_dtype}")
