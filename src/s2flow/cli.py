@@ -230,10 +230,6 @@ def sr_sliding_window_inference(config: Dict[str, Any], logger: logging.Logger):
     logger.info("Initializing SR sliding window processor...")
     processor = SRSlidingWindowProcessor(config, model)
     
-    # Determine output path
-    input_stem = input_path.stem
-    output_path = output_dir / f"{input_stem}_sr.tif"
-    
     # Process file
     logger.info(f"Processing input file: {input_path}")
     logger.info(f"Output will be saved to: {output_path}")
