@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import rasterio as rio
+from rasterio.enums import Resampling
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional, Union
@@ -586,11 +587,16 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         # Update profile with output dimensions
         profile.update(
             height=output.shape[1],
-            width=output.shape[2]
+            width=output.shape[2],
+            dtype='uint16',
+            bigtiff=True,
+            compress='lzw',
         )
         
         with rio.open(output_path, 'w', **profile) as dst:
-            dst.write(output.astype(np.float32))
+            dst.write(output.astype(np.uint16))
+            # create overviews for faster visualization
+            dst.build_overviews([2, 4, 8, 16], resampling=Resampling.nearest)
         
         logger.info(f"Saved SR output to: {output_path}")
 
@@ -896,7 +902,6 @@ def sliding_window_sr_inference(config: Dict[str, Any], sr_model: nn.Module) -> 
     logger.info("Starting sliding window SR inference...")
     
     # Get paths from config
-    print(config)
     input_path = Path(config.get('data', {}).get('input_path'))
     output_path = config.get('data', {}).get('output_path', None)
     if output_path is None:
