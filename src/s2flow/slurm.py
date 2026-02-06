@@ -20,7 +20,7 @@ class SlurmConfig:
     
     def __init__(
         self,
-        partition: str = "gpu-a100-mig7",
+        partition: str = "gpu-a100-mig2",
         account: str = "research-abe",
         memory: str = "16G",
         n_tasks: int = 4,
