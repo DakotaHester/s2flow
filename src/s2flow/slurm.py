@@ -25,7 +25,7 @@ class SlurmConfig:
         memory: str = "16G",
         n_tasks: int = 4,
         time: str = "24:00:00",
-        gres: str = "gpu:a100_1g.10gb:1",
+        gres: str = "gpu:a100_3g.40gb:1",
         mail_user: Optional[str] = None,
         python_env: str = ".venv/bin/activate",
         max_jobs: int = 10,
