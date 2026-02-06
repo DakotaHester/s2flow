@@ -896,6 +896,7 @@ def sliding_window_sr_inference(config: Dict[str, Any], sr_model: nn.Module) -> 
     logger.info("Starting sliding window SR inference...")
     
     # Get paths from config
+    print(config)
     input_path = Path(config.get('data', {}).get('input_path'))
     output_path = config.get('data', {}).get('output_path', None)
     if output_path is None:
