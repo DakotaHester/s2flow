@@ -564,7 +564,7 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         output_profile = input_profile.copy()
         output_profile.update(
             count=self._output_channels,
-            dtype='uint16',
+            dtype='int16',
             transform=rio.Affine(
                 input_transform.a / self.upscale_factor,
                 input_transform.b,
@@ -573,7 +573,7 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
                 input_transform.e / self.upscale_factor,
                 input_transform.f
             ),
-            bigtiff=True,
+            bigtiff='YES',
             compress='lzw',
         )
         return output_profile
@@ -597,10 +597,12 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
             width=output.shape[2],
         )
         
+        logger.debug('OUTPUT MIN: {:.2f}, MAX: {:.2f}'.format(output.min(), output.max()))
+        
         with rio.open(output_path, 'w', **profile) as dst:
-            dst.write(output.astype(np.uint16))
+            dst.write(output.clip(0, 10000).astype(np.int16))
             # create overviews for faster visualization
-            dst.build_overviews([2, 4, 8, 16], resampling=Resampling.nearest)
+            # dst.build_overviews([2, 4, 8, 16], resampling=Resampling.nearest)
         
         logger.info(f"Saved SR output to: {output_path}")
 
@@ -743,6 +745,7 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
             ),
             nodata=0,
             compress='lzw',
+            bigtiff='YES',
         )
         
         if self.colormap is not None:
@@ -775,7 +778,7 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
             if self.colormap is not None:
                 dst.write_colormap(1, self.colormap)
             dst.write(class_predictions + 1, 1)  # Add 1 for 1-indexed classes
-            dst.build_overviews([2, 4, 8, 16], resampling=Resampling.nearest)
+            # dst.build_overviews([2, 4, 8, 16], resampling=Resampling.nearest)
 
         
         logger.info(f"Saved LC prediction output to: {output_path}")
