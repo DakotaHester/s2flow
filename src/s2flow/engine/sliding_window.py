@@ -416,7 +416,8 @@ class BaseSlidingWindowProcessor(ABC):
     def process_file(
         self, 
         input_path: Path, 
-        output_path: Path
+        output_path: Path,
+        correct_band_order: bool=True, # model is trained on NAIP band order (RGBN), but S2 is in BGRN, so we need to reorder if correct_band_order is True
     ) -> np.ndarray:
         """Process a raster file and save the output.
         
@@ -433,6 +434,10 @@ class BaseSlidingWindowProcessor(ABC):
             raster_data = src.read().astype(np.float32)
             input_profile = src.profile.copy()
             input_transform = src.transform
+        
+        if correct_band_order:
+            # Reorder from BGRN to RGBN
+            raster_data = raster_data[[2, 1, 0, 3], :, :]
         
         logger.debug(f"Input raster shape: {raster_data.shape}")
         logger.debug(f"Input CRS: {input_profile.get('crs')}")
@@ -559,7 +564,7 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         output_profile = input_profile.copy()
         output_profile.update(
             count=self._output_channels,
-            dtype='float32',
+            dtype='uint16',
             transform=rio.Affine(
                 input_transform.a / self.upscale_factor,
                 input_transform.b,
@@ -567,7 +572,9 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
                 input_transform.d,
                 input_transform.e / self.upscale_factor,
                 input_transform.f
-            )
+            ),
+            bigtiff=True,
+            compress='lzw',
         )
         return output_profile
     
@@ -588,9 +595,6 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         profile.update(
             height=output.shape[1],
             width=output.shape[2],
-            dtype='uint16',
-            bigtiff=True,
-            compress='lzw',
         )
         
         with rio.open(output_path, 'w', **profile) as dst:
@@ -771,6 +775,7 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
             if self.colormap is not None:
                 dst.write_colormap(1, self.colormap)
             dst.write(class_predictions + 1, 1)  # Add 1 for 1-indexed classes
+            dst.build_overviews([2, 4, 8, 16], resampling=Resampling.nearest)
 
         
         logger.info(f"Saved LC prediction output to: {output_path}")
@@ -803,7 +808,8 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
         self, 
         input_path: Path, 
         output_pred_path: Path,
-        output_probs_path: Optional[Path] = None
+        output_probs_path: Optional[Path] = None,
+        correct_band_order: bool=True, # model is trained on NAIP band order (RGBN), but S2 is in BGRN, so we need to reorder if correct_band_order is True
     ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """Process a raster file and save the outputs.
         
@@ -821,6 +827,10 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
             raster_data = src.read().astype(np.float32)
             input_profile = src.profile.copy()
             input_transform = src.transform
+        
+        if correct_band_order:
+            # Reorder from BGRN to RGBN
+            raster_data = raster_data[[2, 1, 0, 3], :, :]
         
         logger.debug(f"Input raster shape: {raster_data.shape}")
         logger.debug(f"Input CRS: {input_profile.get('crs')}")
@@ -952,7 +962,6 @@ def sliding_window_lc_inference(
     
     # Initialize processor
     processor = LCSlidingWindowProcessor(config, sr_model, lc_model)
-    
     
     # Process file
     processor.process_file(
