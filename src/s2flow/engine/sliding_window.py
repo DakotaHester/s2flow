@@ -386,26 +386,27 @@ class BaseSlidingWindowProcessor(ABC):
                 if self.tta:
                     logger.debug(f"TTA pass {tta_pass + 1}/{num_passes}")
                 
-                global_noise = torch.randn((self.output_channels, output_height, output_width))
+                # global_noise = torch.randn((self.output_channels, output_height, output_width))
                 
                 # Process batches
                 batch_generator = self._generate_tile_batches(padded_raster)
                 
                 for batch_tiles, batch_coords in batch_generator:
                     
-                    batch_noise = []
-                    for (y, x) in batch_coords:
-                        # Convert input coords to output resolution for noise slicing
-                        oy, ox = y * self.upscale_factor, x * self.upscale_factor
-                        noise_patch = global_noise[:, oy:oy+self.output_tile_size, ox:ox+self.output_tile_size]
-                        batch_noise.append(noise_patch)
+                    # batch_noise = []
+                    # for (y, x) in batch_coords:
+                    #     # Convert input coords to output resolution for noise slicing
+                    #     oy, ox = y * self.upscale_factor, x * self.upscale_factor
+                    #     noise_patch = global_noise[:, oy:oy+self.output_tile_size, ox:ox+self.output_tile_size]
+                    #     batch_noise.append(noise_patch)
                     
-                    batch_noise = torch.stack(batch_noise)
+                    # batch_noise = torch.stack(batch_noise)
                     # normalize noise to have zero mean and unit variance per tile
                     # batch_noise = batch_noise - batch_noise.mean(dim=(2, 3), keepdim=True)
                     # batch_noise = batch_noise / (batch_noise.std(dim=(2, 3), keepdim=True) + 1e-8)
                     
-                    weighted_output, output_coords = self._process_batch(batch_tiles, batch_coords, batch_noise)
+                    # weighted_output, output_coords = self._process_batch(batch_tiles, batch_coords, batch_noise)
+                    weighted_output, output_coords = self._process_batch(batch_tiles, batch_coords)
                     
                     # Accumulate results
                     for idx, (y, x) in enumerate(output_coords):
@@ -517,7 +518,7 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         self, 
         batch_tiles: torch.Tensor, 
         batch_coords: List[Tuple[int, int]],
-        batch_noise: torch.Tensor,
+        # batch_noise: torch.Tensor,
     ) -> Tuple[torch.Tensor, List[Tuple[int, int]]]:
         """Process a batch of tiles through the SR model.
         
@@ -535,10 +536,10 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         if self.tta:
             batch_tiles_aug, is_hflip, is_vflip, rot_angle = self._apply_tta_augmentation(batch_tiles)
             
-            for i in range(batch_noise.shape[0]):
-                if is_hflip[i]: batch_noise[i] = torch.flip(batch_noise[i], [2])
-                if is_vflip[i]: batch_noise[i] = torch.flip(batch_noise[i], [1])
-                batch_noise[i] = torch.rot90(batch_noise[i], rot_angle[i].item(), [1, 2])
+            # for i in range(batch_noise.shape[0]):
+            #     if is_hflip[i]: batch_noise[i] = torch.flip(batch_noise[i], [2])
+            #     if is_vflip[i]: batch_noise[i] = torch.flip(batch_noise[i], [1])
+            #     batch_noise[i] = torch.rot90(batch_noise[i], rot_angle[i].item(), [1, 2])
             
         else:
             batch_tiles_aug = batch_tiles
@@ -553,7 +554,8 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         
         # Step 3: SR Sampling
         with self.autocast_ctx:
-            sr_output = self.sampler.sample(sr_input, x_0=batch_noise.to(self.device))
+            # sr_output = self.sampler.sample(sr_input, x_0=batch_noise.to(self.device))
+            sr_output = self.sampler.sample(sr_input)
         logger.debug(f"SR output shape: {sr_output.shape}")
         
         # Reverse TTA if applied
