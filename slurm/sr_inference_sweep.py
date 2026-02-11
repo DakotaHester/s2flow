@@ -5,11 +5,12 @@ from s2flow.slurm import BaseJob, BaseSweep, SlurmConfig
 
 def main() -> None:
     slurm_config = SlurmConfig(
-        memory='16G',
-        partition='gpu-a100-mig7',
-        gres='gpu:a100_1g.10gb',
-        n_tasks=4,
+        memory='8G',
+        partition='gpu-a100-mig2',
+        gres='gpu:a100_3g.40gb',
+        n_tasks=1,
         time='1:00:00',
+        max_jobs=8,
     )
     
     # Initialize the Inference Sweep
