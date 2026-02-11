@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from torch.amp import autocast
 from tqdm import tqdm
 from logging import getLogger
@@ -32,6 +32,7 @@ class BaseSampler(ABC):
         if self.num_timesteps > 0:
             self.step_size = 1 / self.num_timesteps
             self.timesteps = torch.linspace(0.0, 1 - self.step_size, self.num_timesteps, device=self.device)
+            logger.debug(f"Initialized sampler with {self.num_timesteps} steps, step size {self.step_size:.4f}.")
         else:
             raise ValueError(f"num_timesteps must be at least 1, got {self.num_timesteps}.")
 
@@ -58,10 +59,14 @@ class BaseSampler(ABC):
 
 class EulerSampler(BaseSampler):
     @torch.no_grad()
-    def sample(self, cond: torch.Tensor) -> torch.Tensor:
+    def sample(self, cond: torch.Tensor, x_0: Optional[torch.tensor]=None) -> torch.Tensor:
         
-        # x = torch.randn_like(cond, device=self.device)
-        x = self._get_x0(cond.shape[0], cond.shape)
+        if x_0 is None:
+            x = self._get_x0(cond.shape[0], cond.shape)
+        else:
+            logger.debug("Using provided initial noise x_0 for sampling.")
+            x = x_0.clone().to(self.device)
+            
         for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
             
@@ -76,9 +81,13 @@ class EulerSampler(BaseSampler):
 
 class HeunSampler(BaseSampler):
     @torch.no_grad()
-    def sample(self, cond: torch.Tensor) -> torch.Tensor:
-
-        # x = torch.randn_like(cond, device=self.device)
+    def sample(self, cond: torch.Tensor, x_0: Optional[torch.tensor]=None) -> torch.Tensor:
+        
+        if x_0 is None:
+            x = self._get_x0(cond.shape[0], cond.shape)
+        else:
+            x = x_0.clone().to(self.device)
+    
         x = self._get_x0(cond.shape[0], cond.shape)
         for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
@@ -102,10 +111,13 @@ class HeunSampler(BaseSampler):
 
 class MidpointSampler(BaseSampler):
     @torch.no_grad()
-    def sample(self, cond: torch.Tensor) -> torch.Tensor:
+    def sample(self, cond: torch.Tensor, x_0: Optional[torch.tensor]=None) -> torch.Tensor:
+        
+        if x_0 is None:
+            x = self._get_x0(cond.shape[0], cond.shape)
+        else:
+            x = x_0.clone().to(self.device)
 
-        # x = torch.randn_like(cond, device=self.device) 
-        x = self._get_x0(cond.shape[0], cond.shape)
         for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
             t_mid_batch = torch.ones(cond.shape[0], device=self.device) * (t + (self.step_size / 2))
@@ -128,10 +140,13 @@ class MidpointSampler(BaseSampler):
 
 class RK4Sampler(BaseSampler):
     @torch.no_grad()
-    def sample(self, cond: torch.Tensor) -> torch.Tensor:
-
-        # x = torch.randn_like(cond, device=self.device)
-        x = self._get_x0(cond.shape[0], cond.shape)
+    def sample(self, cond: torch.Tensor, x_0: Optional[torch.tensor]=None) -> torch.Tensor:
+        
+        if x_0 is None:
+            x = self._get_x0(cond.shape[0], cond.shape)
+        else:
+            x = x_0.clone().to(self.device)
+        
         for t in tqdm(self.timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
             t_batch = torch.ones(cond.shape[0], device=self.device) * t
             t_mid_batch = torch.ones(cond.shape[0], device=self.device) * (t + (self.step_size / 2))
@@ -174,9 +189,12 @@ class DDIMSampler(BaseSampler):
         self.scheduler.set_timesteps(self.num_timesteps)
     
     @torch.no_grad()
-    def sample(self, cond: torch.Tensor) -> torch.Tensor:
+    def sample(self, cond: torch.Tensor, x_0: Optional[torch.tensor]=None) -> torch.Tensor:
         
-        x = self._get_x0(cond.shape[0], cond.shape)
+        if x_0 is None:
+            x = self._get_x0(cond.shape[0], cond.shape)
+        else:
+            x = x_0.clone().to(self.device)
 
         for t in tqdm(self.scheduler.timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
             t_batch = t.expand(cond.shape[0]).to(self.device).long()
@@ -200,9 +218,12 @@ class DDPMSampler(BaseSampler):
         self.scheduler.set_timesteps(self.num_timesteps)
     
     @torch.no_grad()
-    def sample(self, cond: torch.Tensor) -> torch.Tensor:
+    def sample(self, cond: torch.Tensor, x_0: Optional[torch.tensor]=None) -> torch.Tensor:
         
-        x = self._get_x0(cond.shape[0], cond.shape)
+        if x_0 is None:
+            x = self._get_x0(cond.shape[0], cond.shape)
+        else:
+            x = x_0.clone().to(self.device)
 
         for t in tqdm(self.scheduler.timesteps, desc="Sampling", leave=False, unit="step", disable=not self.show_pbar):
             t_batch = t.expand(cond.shape[0]).to(self.device).long()

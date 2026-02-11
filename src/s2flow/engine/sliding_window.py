@@ -67,7 +67,7 @@ class BaseSlidingWindowProcessor(ABC):
         self.weights = self._create_gaussian_weights(self.output_tile_size, self.gaussian_sigma)
         self.weights = self.weights.to(self.device)
         logger.debug(f"Gaussian weights created with shape: {self.weights.shape}")
-        
+                
         # AMP context
         if config.get('hyperparameters', {}).get('use_amp', True):
             self.autocast_ctx = torch.amp.autocast(device_type=self.device.type, dtype=get_hp_dtype())
@@ -386,11 +386,30 @@ class BaseSlidingWindowProcessor(ABC):
                 if self.tta:
                     logger.debug(f"TTA pass {tta_pass + 1}/{num_passes}")
                 
+                global_noise = torch.randn(
+                # global_noise = torch.zeros( # lets see what happens here...
+                    (self.output_channels, output_height, output_width), 
+                    device=self.device
+                )
+                
                 # Process batches
                 batch_generator = self._generate_tile_batches(padded_raster)
                 
                 for batch_tiles, batch_coords in batch_generator:
-                    weighted_output, output_coords = self._process_batch(batch_tiles, batch_coords)
+                    
+                    batch_noise = []
+                    for (y, x) in batch_coords:
+                        # Convert input coords to output resolution for noise slicing
+                        oy, ox = y * self.upscale_factor, x * self.upscale_factor
+                        noise_patch = global_noise[:, oy:oy+self.output_tile_size, ox:ox+self.output_tile_size]
+                        batch_noise.append(noise_patch)
+                    
+                    batch_noise = torch.stack(batch_noise)
+                    # normalize noise to have zero mean and unit variance per tile
+                    # batch_noise = batch_noise - batch_noise.mean(dim=(2, 3), keepdim=True)
+                    # batch_noise = batch_noise / (batch_noise.std(dim=(2, 3), keepdim=True) + 1e-8)
+                    
+                    weighted_output, output_coords = self._process_batch(batch_tiles, batch_coords, batch_noise)
                     
                     # Accumulate results
                     for idx, (y, x) in enumerate(output_coords):
@@ -499,7 +518,8 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
     def _process_batch(
         self, 
         batch_tiles: torch.Tensor, 
-        batch_coords: List[Tuple[int, int]]
+        batch_coords: List[Tuple[int, int]],
+        batch_noise: torch.Tensor,
     ) -> Tuple[torch.Tensor, List[Tuple[int, int]]]:
         """Process a batch of tiles through the SR model.
         
@@ -516,6 +536,12 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         # Apply TTA if enabled
         if self.tta:
             batch_tiles_aug, is_hflip, is_vflip, rot_angle = self._apply_tta_augmentation(batch_tiles)
+            
+            for i in range(batch_noise.shape[0]):
+                if is_hflip[i]: batch_noise[i] = torch.flip(batch_noise[i], [2])
+                if is_vflip[i]: batch_noise[i] = torch.flip(batch_noise[i], [1])
+                batch_noise[i] = torch.rot90(batch_noise[i], rot_angle[i].item(), [1, 2])
+            
         else:
             batch_tiles_aug = batch_tiles
         
@@ -529,7 +555,7 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         
         # Step 3: SR Sampling
         with self.autocast_ctx:
-            sr_output = self.sampler.sample(sr_input)
+            sr_output = self.sampler.sample(sr_input, x_0=batch_noise)
         logger.debug(f"SR output shape: {sr_output.shape}")
         
         # Reverse TTA if applied
@@ -575,6 +601,10 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
             ),
             bigtiff='YES',
             compress='lzw',
+            tiled=True,
+            blockxsize=512,
+            blockysize=512,
+            interleave='pixel'
         )
         return output_profile
     
