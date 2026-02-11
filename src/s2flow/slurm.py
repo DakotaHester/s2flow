@@ -20,12 +20,12 @@ class SlurmConfig:
     
     def __init__(
         self,
-        partition: str = "gpu-a100-mig2",
+        partition: str = "gpu-a100-mig7",
         account: str = "research-abe",
         memory: str = "16G",
-        n_tasks: int = 4,
+        n_tasks: int = 1,
         time: str = "24:00:00",
-        gres: str = "gpu:a100_3g.40gb:1",
+        gres: str = "gpu:a100_1g.10gb",
         mail_user: Optional[str] = None,
         python_env: str = ".venv/bin/activate",
         max_jobs: int = 10,
