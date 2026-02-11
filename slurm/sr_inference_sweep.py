@@ -5,7 +5,7 @@ from s2flow.slurm import BaseJob, BaseSweep, SlurmConfig
 
 def main() -> None:
     slurm_config = SlurmConfig(
-        memory='8G',
+        memory='16G',
         partition='gpu-a100-mig7',
         gres='gpu:a100_1g.10gb',
         n_tasks=1,
