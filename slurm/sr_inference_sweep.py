@@ -8,7 +8,7 @@ def main() -> None:
         memory='16G',
         partition='gpu-a100-mig2',
         gres='gpu:a100_3g.40gb',
-        n_tasks=1,
+        n_tasks=8,
         time='1:00:00',
         max_jobs=8,
     )
