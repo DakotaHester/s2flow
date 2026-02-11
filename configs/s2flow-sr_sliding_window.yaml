@@ -32,7 +32,7 @@ sr_model:
 sampling:
   solver: euler
   num_steps: 1
-  fixed_noise: false
+  fixed_noise: true
   show_pbar: false
 
 inference:

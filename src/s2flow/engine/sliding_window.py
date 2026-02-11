@@ -494,8 +494,6 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         logger.debug("Initializing SRSlidingWindowProcessor...")
         
         # SR model
-        for param in sr_model.parameters():
-            param.requires_grad = False
         self.sr_model = sr_model.to(self.device)
         self.sr_model.eval()
         logger.debug("SR model moved to device and set to eval mode.")
