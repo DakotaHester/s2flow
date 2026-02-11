@@ -55,4 +55,4 @@ inference:
     5: [74, 37, 20, 255]      # Barren Land
 
 hyperparameters:
-  use_amp: false
+  use_amp: true
