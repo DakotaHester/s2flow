@@ -386,11 +386,7 @@ class BaseSlidingWindowProcessor(ABC):
                 if self.tta:
                     logger.debug(f"TTA pass {tta_pass + 1}/{num_passes}")
                 
-                global_noise = torch.randn(
-                # global_noise = torch.zeros( # lets see what happens here...
-                    (self.output_channels, output_height, output_width), 
-                    device=self.device
-                )
+                global_noise = torch.randn((self.output_channels, output_height, output_width))
                 
                 # Process batches
                 batch_generator = self._generate_tile_batches(padded_raster)
@@ -557,7 +553,7 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         
         # Step 3: SR Sampling
         with self.autocast_ctx:
-            sr_output = self.sampler.sample(sr_input, x_0=batch_noise)
+            sr_output = self.sampler.sample(sr_input, x_0=batch_noise.to(self.device))
         logger.debug(f"SR output shape: {sr_output.shape}")
         
         # Reverse TTA if applied
