@@ -21,6 +21,7 @@ def recompress(path):
         interleave='band',
         tiled=False,
         blockysize=2048,
+        bigtiff='YES',
     )
     profile.pop('blockxsize', None)  # Remove blockxsize if it exists
     
