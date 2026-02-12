@@ -21,7 +21,7 @@ def main() -> None:
         timestamp='20260211_141008',
     )
     
-    sweep.run()
+    sweep.run(skip_completed=False)
 
 
 class SRSldingWindowJob(BaseJob):
