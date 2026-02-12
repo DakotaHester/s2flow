@@ -597,12 +597,11 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
                 input_transform.e / self.upscale_factor,
                 input_transform.f
             ),
-            bigtiff='YES',
-            compress='lzw',
-            tiled=True,
-            blockxsize=512,
-            blockysize=512,
-            interleave='pixel'
+            compress='LZW',
+            predictor=2,
+            interleave='band',
+            tiled=False,
+            blockysize=2048,
         )
         return output_profile
     
