@@ -52,6 +52,7 @@ class RecompressSweep(BaseSweep):
     def generate_jobs(self):
         # Recursive glob for all TIFs
         files = list(self.search_dir.rglob("*.tif"))
+        print(len(files), "files found for recompression.")
         
         for f in files:
             self.jobs.append(RecompressJob(
