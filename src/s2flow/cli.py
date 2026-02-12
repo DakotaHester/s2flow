@@ -224,6 +224,9 @@ def sr_sliding_window_inference(config: Dict[str, Any], logger: logging.Logger):
         output_path = output_dir / f"{input_path.stem}_sr.tif"
     else:
         output_path = Path(output_path)
+    
+    if output_path.exists():
+        raise FileExistsError(f"Output file already exists: {output_path}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     # Initialize processor

@@ -166,7 +166,7 @@ echo "===================================="
 {cmd}
 
 # Mark job as completed
-echo "$(date): Job completed successfully" > {self.completed_file}
+# echo "$(date): Job completed successfully" > {self.completed_file}
 """
         return script
     
