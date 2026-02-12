@@ -814,29 +814,6 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
 
         
         logger.info(f"Saved LC prediction output to: {output_path}")
-    
-    def process_raster(
-        self, 
-        raster_data: np.ndarray,
-        return_probs: bool = False
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-        """Process a raster array.
-        
-        Args:
-            raster_data: Input raster of shape (C, H, W) with values in range 0-10000.
-            return_probs: If True, return (class_probs, class_predictions), else just predictions.
-            
-        Returns:
-            Class predictions array, or tuple of (probs, predictions) if return_probs=True.
-        """
-        # Call parent method to get probabilities
-        probs = super().process_raster(raster_data)
-        
-        # Get class predictions
-        if not return_probs:
-            return np.argmax(probs, axis=0).astype(np.uint8)
-        else:
-            return probs, np.argmax(probs, axis=0).astype(np.uint8)
 
     
     def process_file(
@@ -872,7 +849,7 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
         
         # Process raster
         probs = super().process_raster(raster_data)
-        predictions = np.argmax(probs, axis=0).astype(np.uint8)
+        # predictions = np.argmax(probs, axis=0).astype(np.uint8)
         
         # Get output profile
         output_profile = self._get_output_profile(input_profile, input_transform)
@@ -898,10 +875,7 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
                 dst.write(probs.astype(np.float32))
             logger.info(f"Saved LC probability output to: {output_probs_path}")
             
-            return probs, predictions
-        
-        return predictions
-
+        return probs
 
 # Factory functions for convenience
 
