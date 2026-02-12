@@ -42,7 +42,7 @@ class RecompressSweep(BaseSweep):
     def __init__(self, search_dir: str, slurm_config: SlurmConfig):
         # Pass a dummy config path if BaseSweep requires it
         super().__init__(
-            base_config_path='./configs/dummy.yaml', 
+            base_config_path='./configs/s2flow-sr_sliding_window.yaml',
             sweep_name="lzw_recompression_sweep",
             slurm_config=slurm_config
         )
