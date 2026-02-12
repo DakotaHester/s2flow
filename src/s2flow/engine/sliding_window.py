@@ -772,6 +772,11 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
             ),
             nodata=0,
             compress='lzw',
+            predictor=2,
+            # interleave='band',
+            tiled=True,
+            blockxsize=512,
+            blockysize=512,
             bigtiff='YES',
         )
         
@@ -802,9 +807,9 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
         )
         
         with rio.open(output_path, 'w', **profile) as dst:
+            dst.write(class_predictions + 1, 1)  # Add 1 for 1-indexed classes
             if self.colormap is not None:
                 dst.write_colormap(1, self.colormap)
-            dst.write(class_predictions + 1, 1)  # Add 1 for 1-indexed classes
             # dst.build_overviews([2, 4, 8, 16], resampling=Resampling.nearest)
 
         
