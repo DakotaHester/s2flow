@@ -50,7 +50,7 @@ inference:
     1: [81, 108, 151, 255]    # Open Water
     2: [179, 253, 214, 255]   # Low Vegetation/Herbaceous
     3: [55, 120, 78, 255]     # Woody Vegetation/Tree Canopy
-    4: [152, 152, 153, 255]   # Impervious Surfaces/Structures
+    4: [255, 0, 0, 255]   # Impervious Surfaces/Structures
     5: [74, 37, 20, 255]      # Barren Land
 
 hyperparameters:

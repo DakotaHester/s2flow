@@ -4,7 +4,14 @@ from s2flow.slurm import BaseJob, BaseSweep, SlurmConfig
 
 
 def main() -> None:
-    slurm_config = SlurmConfig(memory='64G')
+    slurm_config = SlurmConfig(
+        memory='128G',
+        partition='gpu-a100-mig2',
+        gres='gpu:a100_3g.40gb',
+        n_tasks=8,
+        time='4:00:00',
+        max_jobs=8,
+    )
     
     # Initialize the Inference Sweep
     sweep = LCSlidingWindowSweep(
@@ -57,7 +64,7 @@ class LCSlidingWindowJob(BaseJob):
 
     def _get_command(self) -> List[str]:
         """Get s2flow command."""
-        return ['s2flow', '--config', str(self.config_path)]
+        return ['s2flow', '--config', str(self.config_path), '--verbose']
 
 
 class LCSlidingWindowSweep(BaseSweep):

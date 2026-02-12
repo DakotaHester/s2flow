@@ -6,7 +6,8 @@ job:
   add_completed_file: true
 
 data:
-  input_path: ../server/dbcenter/products/land/temporalcomposites/CPB_S2L2A_time_composites/2020/annual/17SMB/20200101_20201231/s2_composite_mean.tif
+  # input_path: ../server/dbcenter/products/land/temporalcomposites/CPB_S2L2A_time_composites/2020/annual/17SMB/20200101_20201231/s2_composite_mean.tif
+  input_path: ./data/test_composite_cropped.tif
   output_path: ./output/lc_sliding_window/test.tif
 
 sr_model:
@@ -37,8 +38,8 @@ sampling:
 inference:
   tile_size: 64           # Input tile size at S2 10m resolution
   stride: 32              # Stride at S2 resolution (50% overlap)
-  batch_size: 32          # Number of tiles per batch
-  gaussian_sigma: 92      # Sigma for Gaussian weighting (at output resolution)
+  batch_size: 64          # Number of tiles per batch
+  gaussian_sigma: 16      # Sigma for Gaussian weighting (at output resolution)
   tta: false              # Enable test-time augmentation
   tta_passes: 1           # Number of TTA passes to average
   upscale_factor: 4       # SR upscale factor

@@ -4,19 +4,27 @@ from s2flow.slurm import BaseJob, BaseSweep, SlurmConfig
 
 
 def main() -> None:
-    slurm_config = SlurmConfig(memory='64G')
-    
-    # Initialize the Inference Sweep
-    sweep = LCSlidingWindowSweep(
-        base_config_path='./configs/s2flow-sr_sliding_window.yaml',
-        search_dir='./data/s2_composites',
-        slurm_config=slurm_config,
+    slurm_config = SlurmConfig(
+        memory='64G',
+        partition='gpu-a100-mig2',
+        gres='gpu:a100_3g.40gb',
+        n_tasks=8,
+        time='4:00:00',
+        max_jobs=8,
     )
     
-    sweep.run()
+    # Initialize the Inference Sweep
+    sweep = SRSlidingWindowSweep(
+        base_config_path='./configs/s2flow-sr_sliding_window.yaml',
+        search_dir='./data/S2L2A_hotspots_dakota/',
+        slurm_config=slurm_config,
+        timestamp='20260211_141008',
+    )
+    
+    sweep.run(skip_completed=False)
 
 
-class LCSlidingWindowJob(BaseJob):
+class SRSldingWindowJob(BaseJob):
     """Job for running sliding window inference on a specific S2 composite."""
 
     def _update_config(self):
@@ -33,7 +41,7 @@ class LCSlidingWindowJob(BaseJob):
 
         # 2. Update Output Path
         # Target format: ./runs/s2_out/<YEAR>/<MGRS>.tif
-        output_dir = Path(f"./runs/s2_out_sronly/{year}")
+        output_dir = Path(f"./runs/s2_out_hotspots/{year}")
         output_path = output_dir / f"{mgrs}.tif"
         
         self.base_config['data']['output_path'] = str(output_path)
@@ -60,7 +68,7 @@ class LCSlidingWindowJob(BaseJob):
         return ['s2flow', '--config', str(self.config_path)]
 
 
-class LCSlidingWindowSweep(BaseSweep):
+class SRSlidingWindowSweep(BaseSweep):
     """Sweep to process all matching S2 composites in the data directory."""
 
     def __init__(
@@ -86,8 +94,8 @@ class LCSlidingWindowSweep(BaseSweep):
         # Glob pattern based on your structure:
         # ./data/s2_composites/*/annual/*/*/s2_composite_mean.tif
         # Corresponds to: root / year / type / mgrs / date_range / filename
-        files = list(self.search_dir.glob("2024/annual/*/*/s2_composite_mean.tif"))
-        
+        files = list(self.search_dir.glob("*/annual/*/*/s2_composite_mean.tif"))
+
         if not files:
             print(f"WARNING: No files found in {self.search_dir} matching pattern.")
             return
@@ -108,7 +116,7 @@ class LCSlidingWindowSweep(BaseSweep):
                 print(f"Skipping weird path: {file_path} (Detected MGRS: {mgrs_code})")
                 continue
 
-            job = LCSlidingWindowJob(
+            job = SRSldingWindowJob(
                 base_config=self.base_config,
                 job_params={
                     'input_path': str(file_path),

@@ -67,7 +67,7 @@ class BaseSlidingWindowProcessor(ABC):
         self.weights = self._create_gaussian_weights(self.output_tile_size, self.gaussian_sigma)
         self.weights = self.weights.to(self.device)
         logger.debug(f"Gaussian weights created with shape: {self.weights.shape}")
-        
+                
         # AMP context
         if config.get('hyperparameters', {}).get('use_amp', True):
             self.autocast_ctx = torch.amp.autocast(device_type=self.device.type, dtype=get_hp_dtype())
@@ -386,10 +386,26 @@ class BaseSlidingWindowProcessor(ABC):
                 if self.tta:
                     logger.debug(f"TTA pass {tta_pass + 1}/{num_passes}")
                 
+                # global_noise = torch.randn((self.output_channels, output_height, output_width))
+                
                 # Process batches
                 batch_generator = self._generate_tile_batches(padded_raster)
                 
                 for batch_tiles, batch_coords in batch_generator:
+                    
+                    # batch_noise = []
+                    # for (y, x) in batch_coords:
+                    #     # Convert input coords to output resolution for noise slicing
+                    #     oy, ox = y * self.upscale_factor, x * self.upscale_factor
+                    #     noise_patch = global_noise[:, oy:oy+self.output_tile_size, ox:ox+self.output_tile_size]
+                    #     batch_noise.append(noise_patch)
+                    
+                    # batch_noise = torch.stack(batch_noise)
+                    # normalize noise to have zero mean and unit variance per tile
+                    # batch_noise = batch_noise - batch_noise.mean(dim=(2, 3), keepdim=True)
+                    # batch_noise = batch_noise / (batch_noise.std(dim=(2, 3), keepdim=True) + 1e-8)
+                    
+                    # weighted_output, output_coords = self._process_batch(batch_tiles, batch_coords, batch_noise)
                     weighted_output, output_coords = self._process_batch(batch_tiles, batch_coords)
                     
                     # Accumulate results
@@ -416,7 +432,8 @@ class BaseSlidingWindowProcessor(ABC):
     def process_file(
         self, 
         input_path: Path, 
-        output_path: Path
+        output_path: Path,
+        correct_band_order: bool=True, # model is trained on NAIP band order (RGBN), but S2 is in BGRN, so we need to reorder if correct_band_order is True
     ) -> np.ndarray:
         """Process a raster file and save the output.
         
@@ -433,6 +450,10 @@ class BaseSlidingWindowProcessor(ABC):
             raster_data = src.read().astype(np.float32)
             input_profile = src.profile.copy()
             input_transform = src.transform
+        
+        if correct_band_order:
+            # Reorder from BGRN to RGBN
+            raster_data = raster_data[[2, 1, 0, 3], :, :]
         
         logger.debug(f"Input raster shape: {raster_data.shape}")
         logger.debug(f"Input CRS: {input_profile.get('crs')}")
@@ -494,7 +515,8 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
     def _process_batch(
         self, 
         batch_tiles: torch.Tensor, 
-        batch_coords: List[Tuple[int, int]]
+        batch_coords: List[Tuple[int, int]],
+        # batch_noise: torch.Tensor,
     ) -> Tuple[torch.Tensor, List[Tuple[int, int]]]:
         """Process a batch of tiles through the SR model.
         
@@ -511,6 +533,12 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         # Apply TTA if enabled
         if self.tta:
             batch_tiles_aug, is_hflip, is_vflip, rot_angle = self._apply_tta_augmentation(batch_tiles)
+            
+            # for i in range(batch_noise.shape[0]):
+            #     if is_hflip[i]: batch_noise[i] = torch.flip(batch_noise[i], [2])
+            #     if is_vflip[i]: batch_noise[i] = torch.flip(batch_noise[i], [1])
+            #     batch_noise[i] = torch.rot90(batch_noise[i], rot_angle[i].item(), [1, 2])
+            
         else:
             batch_tiles_aug = batch_tiles
         
@@ -524,6 +552,7 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         
         # Step 3: SR Sampling
         with self.autocast_ctx:
+            # sr_output = self.sampler.sample(sr_input, x_0=batch_noise.to(self.device))
             sr_output = self.sampler.sample(sr_input)
         logger.debug(f"SR output shape: {sr_output.shape}")
         
@@ -559,7 +588,7 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         output_profile = input_profile.copy()
         output_profile.update(
             count=self._output_channels,
-            dtype='float32',
+            dtype='int16',
             transform=rio.Affine(
                 input_transform.a / self.upscale_factor,
                 input_transform.b,
@@ -567,7 +596,12 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
                 input_transform.d,
                 input_transform.e / self.upscale_factor,
                 input_transform.f
-            )
+            ),
+            compress='LZW',
+            predictor=2,
+            interleave='band',
+            tiled=False,
+            bigtiff='YES',
         )
         return output_profile
     
@@ -588,15 +622,14 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
         profile.update(
             height=output.shape[1],
             width=output.shape[2],
-            dtype='uint16',
-            bigtiff=True,
-            compress='lzw',
         )
         
+        logger.debug('OUTPUT MIN: {:.2f}, MAX: {:.2f}'.format(output.min(), output.max()))
+        
         with rio.open(output_path, 'w', **profile) as dst:
-            dst.write(output.astype(np.uint16))
+            dst.write(output.clip(0, 10000).astype(np.int16))
             # create overviews for faster visualization
-            dst.build_overviews([2, 4, 8, 16], resampling=Resampling.nearest)
+            # dst.build_overviews([2, 4, 8, 16], resampling=Resampling.nearest)
         
         logger.info(f"Saved SR output to: {output_path}")
 
@@ -739,6 +772,12 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
             ),
             nodata=0,
             compress='lzw',
+            predictor=2,
+            # interleave='band',
+            tiled=True,
+            blockxsize=512,
+            blockysize=512,
+            bigtiff='YES',
         )
         
         if self.colormap is not None:
@@ -768,42 +807,21 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
         )
         
         with rio.open(output_path, 'w', **profile) as dst:
+            dst.write(class_predictions + 1, 1)  # Add 1 for 1-indexed classes
             if self.colormap is not None:
                 dst.write_colormap(1, self.colormap)
-            dst.write(class_predictions + 1, 1)  # Add 1 for 1-indexed classes
+            # dst.build_overviews([2, 4, 8, 16], resampling=Resampling.nearest)
 
         
         logger.info(f"Saved LC prediction output to: {output_path}")
-    
-    def process_raster(
-        self, 
-        raster_data: np.ndarray,
-        return_probs: bool = False
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-        """Process a raster array.
-        
-        Args:
-            raster_data: Input raster of shape (C, H, W) with values in range 0-10000.
-            return_probs: If True, return (class_probs, class_predictions), else just predictions.
-            
-        Returns:
-            Class predictions array, or tuple of (probs, predictions) if return_probs=True.
-        """
-        # Call parent method to get probabilities
-        probs = super().process_raster(raster_data)
-        
-        # Get class predictions
-        predictions = np.argmax(probs, axis=0).astype(np.uint8)
-        
-        if return_probs:
-            return probs, predictions
-        return predictions
+
     
     def process_file(
         self, 
         input_path: Path, 
         output_pred_path: Path,
-        output_probs_path: Optional[Path] = None
+        output_probs_path: Optional[Path] = None,
+        correct_band_order: bool=True, # model is trained on NAIP band order (RGBN), but S2 is in BGRN, so we need to reorder if correct_band_order is True
     ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """Process a raster file and save the outputs.
         
@@ -822,12 +840,16 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
             input_profile = src.profile.copy()
             input_transform = src.transform
         
+        if correct_band_order:
+            # Reorder from BGRN to RGBN
+            raster_data = raster_data[[2, 1, 0, 3], :, :]
+        
         logger.debug(f"Input raster shape: {raster_data.shape}")
         logger.debug(f"Input CRS: {input_profile.get('crs')}")
         
         # Process raster
         probs = super().process_raster(raster_data)
-        predictions = np.argmax(probs, axis=0).astype(np.uint8)
+        # predictions = np.argmax(probs, axis=0).astype(np.uint8)
         
         # Get output profile
         output_profile = self._get_output_profile(input_profile, input_transform)
@@ -853,10 +875,7 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
                 dst.write(probs.astype(np.float32))
             logger.info(f"Saved LC probability output to: {output_probs_path}")
             
-            return probs, predictions
-        
-        return predictions
-
+        return probs
 
 # Factory functions for convenience
 
@@ -952,7 +971,6 @@ def sliding_window_lc_inference(
     
     # Initialize processor
     processor = LCSlidingWindowProcessor(config, sr_model, lc_model)
-    
     
     # Process file
     processor.process_file(
