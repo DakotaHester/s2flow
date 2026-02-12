@@ -18,6 +18,7 @@ def main() -> None:
         base_config_path='./configs/s2flow-sr_sliding_window.yaml',
         search_dir='./data/S2L2A_hotspots_dakota/',
         slurm_config=slurm_config,
+        timestamp='20260211_141008',
     )
     
     sweep.run()
