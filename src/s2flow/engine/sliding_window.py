@@ -833,11 +833,11 @@ class LCSlidingWindowProcessor(BaseSlidingWindowProcessor):
         probs = super().process_raster(raster_data)
         
         # Get class predictions
-        predictions = np.argmax(probs, axis=0).astype(np.uint8)
-        
-        if return_probs:
-            return probs, predictions
-        return predictions
+        if not return_probs:
+            return np.argmax(probs, axis=0).astype(np.uint8)
+        else:
+            return probs, np.argmax(probs, axis=0).astype(np.uint8)
+
     
     def process_file(
         self, 
