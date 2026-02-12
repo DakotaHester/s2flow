@@ -10,9 +10,13 @@ def main():
 
 def recompress(path):
     
+    print(f"Recompressing {path} with LZW compression...")
+    
     with rio.open(path) as src:
         profile = src.profile.copy()
         data = src.read()
+    
+    print(f"Original compression: {profile.get('compress', 'None')}")
 
     # Update profile for LZW compression
     profile.update(
@@ -20,10 +24,10 @@ def recompress(path):
         predictor=2,
         interleave='band',
         tiled=False,
-        blockysize=2048,
         bigtiff='YES',
     )
-    profile.pop('blockxsize', None)  # Remove blockxsize if it exists
+    profile.pop('blockxsize', None)
+    profile.pop('blockysize', None)
     
     temp_path = path + '.tmp'
     with rio.open(temp_path, 'w', **profile) as dst:

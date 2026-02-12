@@ -601,7 +601,7 @@ class SRSlidingWindowProcessor(BaseSlidingWindowProcessor):
             predictor=2,
             interleave='band',
             tiled=False,
-            blockysize=2048,
+            bigtiff='YES',
         )
         return output_profile
     
