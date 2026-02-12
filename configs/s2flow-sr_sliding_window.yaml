@@ -38,7 +38,7 @@ sampling:
 inference:
   tile_size: 64           # Input tile size at S2 10m resolution
   stride: 32              # Stride at S2 resolution (50% overlap)
-  batch_size: 128         # Number of tiles per batch
+  batch_size: 64          # Number of tiles per batch
   gaussian_sigma: 16      # Sigma for Gaussian weighting (at output resolution)
   tta: false              # Enable test-time augmentation
   tta_passes: 1           # Number of TTA passes to average
