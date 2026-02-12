@@ -22,7 +22,8 @@ class RecompressJob(BaseJob):
     def _update_config(self):
         # This sweep doesn't use a YAML config, but the base class 
         # may require this to be implemented. 
-        self.base_config['job']['name'] = self._generate_job_name()
+        self.base_config['job'] = {}
+        self.base_config['name'] = self._generate_job_name()
 
     def _generate_job_name(self) -> str:
         # Sanitize filename for SLURM job name
