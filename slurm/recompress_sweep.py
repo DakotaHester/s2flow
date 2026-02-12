@@ -35,7 +35,7 @@ class RecompressJob(BaseJob):
 
     def _get_command(self) -> List[str]:
         # Direct call to your script
-        return ['python', 'slurm/recompress.py', '--path', self.job_params['path']]
+        return ['python', 'slurm/recompress.py', self.job_params['path']]
 
 class RecompressSweep(BaseSweep):
     """Sweep to recompress all GeoTIFFs in a directory."""
