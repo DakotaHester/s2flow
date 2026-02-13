@@ -16,9 +16,9 @@ def main() -> None:
     # Initialize the Inference Sweep
     sweep = SRSlidingWindowSweep(
         base_config_path='./configs/s2flow-sr_sliding_window.yaml',
-        search_dir='./data/S2L2A_hotspots_dakota/',
+        search_dir='./data/S2L2A10m_CONUS_2025/',
         slurm_config=slurm_config,
-        timestamp='20260211_141008',
+        # timestamp='20260211_141008',
     )
     
     sweep.run(skip_completed=False)
@@ -41,7 +41,7 @@ class SRSldingWindowJob(BaseJob):
 
         # 2. Update Output Path
         # Target format: ./runs/s2_out/<YEAR>/<MGRS>.tif
-        output_dir = Path(f"./runs/s2_out_hotspots/{year}")
+        output_dir = Path(f"./runs/s2_out_CONUS/{year}")
         output_path = output_dir / f"{mgrs}.tif"
         
         self.base_config['data']['output_path'] = str(output_path)
