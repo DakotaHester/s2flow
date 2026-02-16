@@ -16,7 +16,7 @@ def main() -> None:
     # Initialize the Inference Sweep
     sweep = SRSlidingWindowSweep(
         base_config_path='./configs/s2flow-sr_sliding_window.yaml',
-        search_dir='./data/S2L2A10m_CONUS_2025/',
+        search_dir='./data/S2L2A_CONUS_Selected/',
         slurm_config=slurm_config,
         # timestamp='20260211_141008',
     )
