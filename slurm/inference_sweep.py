@@ -93,7 +93,7 @@ class LCSlidingWindowSweep(BaseSweep):
         # Glob pattern based on your structure:
         # ./data/s2_composites/*/annual/*/*/s2_composite_mean.tif
         # Corresponds to: root / year / type / mgrs / date_range / filename
-        files = list(self.search_dir.glob("*/annual/*/*/s2_composite_mean.tif"))
+        files = list(self.search_dir.glob("2025/annual/*/*/s2_composite_mean.tif"))
         
         if not files:
             print(f"WARNING: No files found in {self.search_dir} matching pattern.")
