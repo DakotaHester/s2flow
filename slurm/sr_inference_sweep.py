@@ -94,7 +94,7 @@ class SRSlidingWindowSweep(BaseSweep):
         # Glob pattern based on your structure:
         # ./data/s2_composites/*/annual/*/*/s2_composite_mean.tif
         # Corresponds to: root / year / type / mgrs / date_range / filename
-        files = list(self.search_dir.glob("*/annual/*/*/s2_composite_mean.tif"))
+        files = list(self.search_dir.glob("2020/annual/*/*/s2_composite_mean.tif")) # NOTE: DO 2020 ONLY FOR NOW
 
         if not files:
             print(f"WARNING: No files found in {self.search_dir} matching pattern.")
