@@ -16,7 +16,7 @@ def main() -> None:
     # Initialize the Inference Sweep
     sweep = SRSlidingWindowSweep(
         base_config_path='./configs/s2flow-sr_sliding_window.yaml',
-        search_dir='./data/S2L2A_CONUS_Selected/',
+        search_dir='./data/S2L2A10m_CONUS_2025/',
         slurm_config=slurm_config,
         # timestamp='20260211_141008',
     )
@@ -94,7 +94,7 @@ class SRSlidingWindowSweep(BaseSweep):
         # Glob pattern based on your structure:
         # ./data/s2_composites/*/annual/*/*/s2_composite_mean.tif
         # Corresponds to: root / year / type / mgrs / date_range / filename
-        files = list(self.search_dir.glob("2020/annual/*/*/s2_composite_mean.tif")) # NOTE: DO 2020 ONLY FOR NOW
+        files = list(self.search_dir.glob("2025/annual/*/*/s2_composite_mean.tif")) 
 
         if not files:
             print(f"WARNING: No files found in {self.search_dir} matching pattern.")
