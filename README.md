@@ -7,8 +7,6 @@
 
 It supports both tile-based workflows and large GeoTIFF sliding-window inference.
 
-This README is written for a novice MS student: it explains how to run inference, how configs work, what files do what, and what assumptions the code makes.
-
 ## Table of contents
 
 - [s2flow — Flow Matching for Sentinel‑2 4× Super‑Resolution (and Land Cover)](#s2flow--flow-matching-for-sentinel2-4-superresolution-and-land-cover)
