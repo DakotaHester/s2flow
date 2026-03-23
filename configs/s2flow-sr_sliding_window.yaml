@@ -6,8 +6,8 @@ job:
   add_completed_file: true
 
 data:
-  # input_path: ../server/dbcenter/products/land/temporalcomposites/CPB_S2L2A_time_composites/2020/annual/17SMB/20200101_20201231/s2_composite_mean.tif
-  input_path: ./data/test_composite_cropped.tif
+  input_path: ../server/dbcenter/products/land/temporalcomposites/CPB_S2L2A_time_composites/2020/annual/17SMB/20200101_20201231/s2_composite_mean.tif
+  # input_path: ./data/test_composite_cropped.tif
   output_path: ./output/lc_sliding_window/test.tif
 
 sr_model:
