@@ -128,7 +128,10 @@ def train_sr_model(config: Dict[str, Any], logger: logging.Logger):
         if sampler == 'ddpm':
             from .engine.training import DDPMSRTrainer
             trainer_class = DDPMSRTrainer
-        else: # default to FlowMatchingSRTrainer
+        elif sampler == 'regression':
+            from .engine.training import RegressionSRTrainer
+            trainer_class = RegressionSRTrainer
+        else: # default to flow matching
             from .engine.training import FlowMatchingSRTrainer
             trainer_class = FlowMatchingSRTrainer
 

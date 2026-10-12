@@ -83,7 +83,7 @@ def sr_model_evaluation(config: Dict[str, Any], model: nn.Module):
                 target_batch = torch.stack(target_tensors).to(device)
                 
                 gpu_start_time = time()
-                output_batch = sampler.sample(input_batch)
+                output_batch = sampler.sample(input_batch).float()
                 gpu_stop_time = time()
                 gpu_time += (gpu_stop_time - gpu_start_time)
                 
