@@ -624,24 +624,19 @@ class RealESRGANTrainer(SRTrainer):
         if self.scaler and 'scaler' in ckpt:
             self.scaler.load_state_dict(ckpt['scaler'])
 
-    
-def train_sr_model(config: Dict[str, Any], model: nn.Module):
-    
-    load_checkpoint = config.get('job', {}).get('load_checkpoint', False)
-    if load_checkpoint:
-        logger.info("`load_checkpoint` is True; loading trainer from checkpoint...")
-        trainer = FlowMatchingSRTrainer.from_checkpoint(config, model)
-    else:
-        logger.info("`load_checkpoint` is False; initializing new trainer...")
-        trainer = FlowMatchingSRTrainer(config, model)
-    
-    logger.info("Starting super-resolution model training...")
-    trainer.fit(config)
-    logger.info("Super-resolution model training complete.")
-    
 
+class RegressionSRTrainer(SRTrainer):
+    
+    def _compute_loss_and_predictions(self, batch_data) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        input_img, target_img = map(lambda x: x.to(self.device), batch_data)
+        logger.debug(f"Input shape: {input_img.shape}, Target shape: {target_img.shape}")
 
-def train_lc_model(config: Dict[str, Any]):
-    trainer = LandCoverTrainer()
-    logger.fit("Starting land cover model training...")
-    trainer.train(config)
+        with autocast(device_type=self.device.type, dtype=self.hp_dtype, enabled=self.use_amp):
+            dummy_timestep = torch.zeros(input_img.size(0), device=self.device)  # Dummy timestep for regression - fixed at 0
+            pred_image = self.model(input_img, dummy_timestep)
+            loss = F.l1_loss(pred_image, target_img, reduction='none').mean(dim=(1, 2, 3))
+            if logger.isEnabledFor(logging.DEBUG):
+                 logger.debug(f"Loss computed. Mean: {loss.mean().item():.4f}, Min: {loss.min().item():.4f}, Max: {loss.max().item():.4f}")
+        
+        return loss, pred_image, target_img
+    
