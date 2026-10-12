@@ -249,6 +249,14 @@ class GANSampler(BaseSampler):
         return self.model(cond) # Upscale using ESRGAN
 
 
+class RegressionSampler(BaseSampler):
+    
+    @torch.no_grad()
+    def sample(self, cond: torch.Tensor) -> torch.Tensor:
+        with self.autocast_context:
+            dummy_timestep = torch.zeros(cond.size(0), device=self.device)  # Dummy timestep for regression - fixed at 0
+            return self.model(cond, dummy_timestep) # Direct regression without iterative sampling
+
 
 def get_sampler(config: Dict[str, Any], model: nn.Module) -> BaseSampler:
     use_gan = config.get('sampling', {}).get('gan', False)
@@ -276,6 +284,9 @@ def get_sampler(config: Dict[str, Any], model: nn.Module) -> BaseSampler:
     elif sampler_type == 'ddpm':
         logger.info("Using DDPM solver.")
         sampler = DDPMSampler(config, model)
+    elif sampler_type == 'regression':
+        logger.info("Using direct regression (no iterative sampling).")
+        sampler = RegressionSampler(config, model)
     else:
         raise ValueError(f"Unsupported sampler type: {sampler_type}")
     
