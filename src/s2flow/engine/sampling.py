@@ -16,7 +16,8 @@ class BaseSampler(ABC):
     def __init__(self, config: Dict[str, Any], model: nn.Module) -> None:
 
         self.model = model
-        self.device = get_device()
+        configured_device = config.get('device')
+        self.device = torch.device(configured_device) if configured_device is not None else get_device()
         self.model.to(self.device)
         
         self.use_amp = config.get('hyperparameters', {}).get('use_amp', True)
