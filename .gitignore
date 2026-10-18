@@ -12,6 +12,7 @@ wheels/
 # Project things
 runs/
 logs/
+logs_temp/
 # data/
 data/s2flow-s2naip
 data/cpb_lc
